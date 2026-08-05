@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 const ENGINE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle";
 const SITE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle-site";
 
@@ -75,12 +77,20 @@ export default function Home() {
         <span className="font-mono text-sm font-medium tracking-tight">
           <span aria-hidden="true">◇</span> Backcountry Water Oracle
         </span>
-        <a
-          href={SITE_REPO}
-          className="text-sm text-muted underline decoration-border underline-offset-4 transition-colors hover:text-accent hover:decoration-accent"
-        >
-          Source on GitHub
-        </a>
+        <nav className="flex flex-wrap items-center gap-4 text-sm">
+          <Link href="/sources" className="text-muted transition-colors hover:text-accent">
+            Sources
+          </Link>
+          <Link href="/forecast" className="text-muted transition-colors hover:text-accent">
+            Current read
+          </Link>
+          <a
+            href={SITE_REPO}
+            className="text-muted underline decoration-border underline-offset-4 transition-colors hover:text-accent hover:decoration-accent"
+          >
+            GitHub
+          </a>
+        </nav>
       </header>
 
       <main>
@@ -188,9 +198,21 @@ export default function Home() {
             trip notes on water, you already have the valuable thing.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/sources"
+              className="rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+            >
+              Browse water sources
+            </Link>
+            <Link
+              href="/forecast"
+              className="rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-medium transition-colors hover:border-accent hover:text-accent"
+            >
+              Current read
+            </Link>
             <a
               href={ENGINE_REPO}
-              className="rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+              className="rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-medium transition-colors hover:border-accent hover:text-accent"
             >
               The engine on GitHub
             </a>

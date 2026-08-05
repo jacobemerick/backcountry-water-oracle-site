@@ -30,7 +30,7 @@ export type Source = {
 export async function listSources(): Promise<Source[]> {
   const sql = db();
   return (await sql`
-    SELECT id, name, slug, lat, lon
+    SELECT id::int AS id, name, slug, lat, lon
     FROM sources
     ORDER BY name
   `) as Source[];
@@ -50,4 +50,76 @@ export async function engineRowsForSources(sourceIds: number[]): Promise<EngineR
     WHERE source_id = ANY(${sourceIds}::bigint[])
     ORDER BY source, date
   `) as EngineRow[];
+}
+
+export type NearbySource = Source & { distance_km: number; report_count: number; last_reported: string | null };
+
+/**
+ * Sources within `radiusKm`, nearest first — the duplicate-prevention query.
+ *
+ * This exists because of engine issue #9: two sources sharing a name are fused
+ * by the engine onto the first one's coordinates, so half the observations get
+ * correlated against the wrong location's rainfall and the output looks
+ * completely normal. "Cottonwood Spring" is a spectacularly common name, so the
+ * defence has to be at the point of creation, not after.
+ */
+export async function sourcesNear(
+  lat: number,
+  lon: number,
+  radiusKm = 2,
+  limit = 8,
+): Promise<NearbySource[]> {
+  const sql = db();
+  return (await sql`
+    SELECT s.id::int AS id, s.name, s.slug, s.lat, s.lon,
+           ST_Distance(s.geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography) / 1000
+             AS distance_km,
+           count(r.id)::int         AS report_count,
+           max(r.observed_on)::text AS last_reported
+    FROM sources s
+    LEFT JOIN reports r ON r.source_id = s.id
+    WHERE ST_DWithin(s.geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, ${radiusKm * 1000})
+    GROUP BY s.id
+    ORDER BY distance_km
+    LIMIT ${limit}
+  `) as NearbySource[];
+}
+
+export type SourceListing = Source & { report_count: number; last_reported: string | null };
+
+/** Every source with its report counts — small enough to send whole for the map. */
+export async function listSourcesWithCounts(): Promise<SourceListing[]> {
+  const sql = db();
+  return (await sql`
+    SELECT s.id::int AS id, s.name, s.slug, s.lat, s.lon,
+           count(r.id)::int         AS report_count,
+           max(r.observed_on)::text AS last_reported
+    FROM sources s
+    LEFT JOIN reports r ON r.source_id = s.id
+    GROUP BY s.id
+    ORDER BY s.name
+  `) as SourceListing[];
+}
+
+export async function findSourceBySlug(slug: string): Promise<Source | null> {
+  const sql = db();
+  const rows = (await sql`SELECT id::int AS id, name, slug, lat, lon FROM sources WHERE slug = ${slug}`) as Source[];
+  return rows[0] ?? null;
+}
+
+/** Insert a source. Caller is responsible for having offered the nearby matches first. */
+export async function createSource(input: {
+  name: string;
+  slug: string;
+  lat: number;
+  lon: number;
+  notes?: string | null;
+}): Promise<Source> {
+  const sql = db();
+  const rows = (await sql`
+    INSERT INTO sources (name, slug, lat, lon, notes)
+    VALUES (${input.name}, ${input.slug}, ${input.lat}, ${input.lon}, ${input.notes ?? null})
+    RETURNING id::int AS id, name, slug, lat, lon
+  `) as Source[];
+  return rows[0];
 }
