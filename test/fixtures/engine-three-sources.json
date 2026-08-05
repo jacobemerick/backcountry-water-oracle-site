@@ -21,6 +21,16 @@
       "lon": -111.45293,
       "n": 160,
       "small_n": false,
+      "reports": {
+        "total": 160,
+        "used": 160,
+        "excluded_before_precip": 0,
+        "excluded_after_precip": 0,
+        "precip_span": [
+          "2007-01-01",
+          "2026-07-30"
+        ]
+      },
       "pct_dry": 14,
       "mean_flow": 0.4188,
       "annual_precip_in": 19.4,
@@ -98,6 +108,16 @@
       "lon": -111.46653,
       "n": 15,
       "small_n": true,
+      "reports": {
+        "total": 15,
+        "used": 15,
+        "excluded_before_precip": 0,
+        "excluded_after_precip": 0,
+        "precip_span": [
+          "2007-01-01",
+          "2026-07-30"
+        ]
+      },
       "pct_dry": 33,
       "mean_flow": 0.4133,
       "annual_precip_in": 19.4,
@@ -171,6 +191,16 @@
       "lon": -111.49097,
       "n": 58,
       "small_n": false,
+      "reports": {
+        "total": 58,
+        "used": 58,
+        "excluded_before_precip": 0,
+        "excluded_after_precip": 0,
+        "precip_span": [
+          "2007-01-01",
+          "2026-07-30"
+        ]
+      },
       "pct_dry": 3,
       "mean_flow": 0.5,
       "annual_precip_in": 19.4,

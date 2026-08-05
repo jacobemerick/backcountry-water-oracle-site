@@ -115,7 +115,15 @@ export function SourceCard({ source }: { source: SourceForecast }) {
 
       <div className="space-y-6 px-5 py-5 sm:px-6">
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Stat label="Reports" value={String(source.n)} hint={CONFIDENCE_LABEL[confidence]} />
+          <Stat
+            label="Reports"
+            value={
+              source.reports.total > source.n
+                ? `${source.n} of ${source.reports.total}`
+                : String(source.n)
+            }
+            hint={CONFIDENCE_LABEL[confidence]}
+          />
           <Stat label="Ever dry" value={`${source.pct_dry}%`} hint="of all reports" />
           <Stat
             label="Average flow"
@@ -126,6 +134,28 @@ export function SourceCard({ source }: { source: SourceForecast }) {
         </dl>
 
         <p className="text-sm leading-relaxed text-muted">{explainType(source)}</p>
+
+        {source.reports.total > source.n && (
+          <p className="rounded-lg border border-border bg-surface-sunk p-4 text-sm leading-relaxed text-muted">
+            <strong className="font-medium text-foreground">
+              {source.reports.total - source.n} of {source.reports.total} reports could not be used.
+            </strong>{" "}
+            {source.reports.excluded_before_precip > 0 && (
+              <>
+                {source.reports.excluded_before_precip} predate the precipitation record, which
+                starts {source.reports.precip_span[0]}.{" "}
+              </>
+            )}
+            {source.reports.excluded_after_precip > 0 && (
+              <>
+                {source.reports.excluded_after_precip} fall after it ends (
+                {source.reports.precip_span[1]}) — the archive runs about a week behind.{" "}
+              </>
+            )}
+            Every number above is computed from the {source.n} that remain, so treat them as
+            describing that subset rather than the full history.
+          </p>
+        )}
 
         {showVerdict && (
           <div>

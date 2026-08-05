@@ -92,6 +92,52 @@ test("every field the UI reads is present and the right type", () => {
   }
 });
 
+test("report accounting is present and internally consistent", () => {
+  for (const result of [THREE, WITH_NOTES]) {
+    for (const s of result.sources) {
+      const r = s.reports;
+      assert.ok(r, `${s.name} has no reports accounting`);
+
+      // `used` is the number every headline stat is computed from, so if it
+      // ever diverges from `n` the UI is describing a different sample than it
+      // claims to.
+      assert.equal(r.used, s.n, `${s.name}: used should equal n`);
+      assert.equal(
+        r.total,
+        r.used + r.excluded_before_precip + r.excluded_after_precip,
+        `${s.name}: total should account for every report`,
+      );
+      assert.ok(r.total >= r.used);
+
+      assert.equal(r.precip_span.length, 2);
+      for (const d of r.precip_span) assert.match(d, /^\d{4}-\d{2}-\d{2}$/);
+      assert.ok(r.precip_span[0] < r.precip_span[1]);
+    }
+  }
+});
+
+test("partial exclusions are visible rather than silently shrinking n", () => {
+  // Engine #10: reports outside the precipitation record used to vanish, so n
+  // (and %dry, mean flow, every correlation) quietly described a subset.
+  const chilson = WITH_NOTES.sources.find((s) => s.name === "Chilson Spring")!;
+  assert.equal(chilson.reports.total, 3);
+  assert.equal(chilson.reports.used, 2);
+  assert.equal(chilson.reports.excluded_before_precip, 1);
+  assert.ok(
+    chilson.reports.total > chilson.n,
+    "fixture must exercise the partial-exclusion banner",
+  );
+});
+
+test("a fully-excluded source is skipped with a note explaining why", () => {
+  const note = WITH_NOTES.notes.find((n) => n.source === "Ancient Tank");
+  assert.ok(note, "expected a note for the fully-excluded source");
+  assert.equal(note.kind, "skip");
+  // Should say what happened, not just that nothing happened.
+  assert.match(note.message, /usable/);
+  assert.match(note.message, /predate/);
+});
+
 test("mean_flow_by_month is keyed by month number and may have gaps", () => {
   for (const s of THREE.sources) {
     for (const [k, v] of Object.entries(s.mean_flow_by_month)) {

@@ -41,5 +41,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# vendored engine precip cache (runtime artifact)
-engine/.cache/
+# vendored engine precip cache (runtime artifact, any location)
+.cache/
+**/.cache/
+
+# python bytecode
+__pycache__/
+*.pyc

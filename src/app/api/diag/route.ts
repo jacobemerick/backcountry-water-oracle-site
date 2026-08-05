@@ -1,86 +1,62 @@
-import { spawn } from "node:child_process";
-import { access, constants } from "node:fs/promises";
-import { join } from "node:path";
-
 /**
- * TEMPORARY probe. Answers one question that decides the architecture: can a
- * Next.js Node function on Vercel execute the vendored Python engine at all?
+ * Deployment probe. Answers, in one request, whether the web service can
+ * actually reach the engine service over its Vercel binding.
  *
- * Vercel's docs point Python-alongside-Next.js at Services rather than at
- * in-process execution, but they don't say whether a `python3` binary happens
- * to exist in the Node runtime image. Worth 60 seconds of empiricism before
- * committing to an architecture.
+ * Kept rather than deleted along with #3, because it is the only way to verify
+ * a binding from outside: the engine service has no public route by design, so
+ * it can only be observed through something holding the binding.
  *
- * DELETE once the answer is recorded in site issue #3.
+ * Its previous job — establishing that the Node runtime has no Python — is
+ * done and recorded on #3.
  */
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-function tryRun(cmd: string, args: string[]): Promise<{ ok: boolean; out: string }> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (ok: boolean, out: string) => {
-      if (done) return;
-      done = true;
-      resolve({ ok, out: out.trim().slice(0, 400) });
-    };
-
-    try {
-      const child = spawn(cmd, args);
-      const chunks: Buffer[] = [];
-      child.stdout.on("data", (d) => chunks.push(d));
-      child.stderr.on("data", (d) => chunks.push(d));
-      child.on("error", (e) => finish(false, `spawn error: ${e.message}`));
-      child.on("close", (code) =>
-        finish(code === 0, `exit ${code}: ${Buffer.concat(chunks).toString("utf8")}`),
-      );
-      setTimeout(() => {
-        child.kill("SIGKILL");
-        finish(false, "timed out after 10s");
-      }, 10_000);
-    } catch (e) {
-      finish(false, `threw: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  });
-}
-
 export async function GET() {
-  const enginePath = join(process.cwd(), "engine", "forecast.py");
+  const engineUrl = process.env.ENGINE_URL;
 
-  let engineBundled: string;
-  try {
-    await access(enginePath, constants.R_OK);
-    engineBundled = "yes";
-  } catch (e) {
-    engineBundled = `no (${e instanceof Error ? e.message : String(e)})`;
+  let engine: unknown;
+  if (!engineUrl) {
+    engine = {
+      ok: false,
+      reason:
+        "ENGINE_URL is not set. In production Vercel injects it from the service " +
+        "binding declared in vercel.json; locally it is absent by design, and the " +
+        "engine runs as a subprocess instead.",
+    };
+  } else {
+    try {
+      const res = await fetch(new URL("/", engineUrl), {
+        signal: AbortSignal.timeout(15_000),
+        cache: "no-store",
+      });
+      const body = await res.text();
+      engine = res.ok
+        ? { ok: true, status: res.status, health: JSON.parse(body) }
+        : { ok: false, status: res.status, body: body.slice(0, 300) };
+    } catch (e) {
+      engine = { ok: false, reason: e instanceof Error ? e.message : String(e) };
+    }
   }
 
-  const [python3, python, engineRun] = await Promise.all([
-    tryRun("python3", ["--version"]),
-    tryRun("python", ["--version"]),
-    tryRun("python3", [enginePath, "--help"]),
-  ]);
+  const reachable =
+    typeof engine === "object" && engine !== null && "ok" in engine && Boolean(engine.ok);
 
   return Response.json(
     {
-      runtime: {
+      web: {
         node: process.version,
-        platform: process.platform,
-        arch: process.arch,
-        cwd: process.cwd(),
         vercelEnv: process.env.VERCEL_ENV ?? "local",
         region: process.env.VERCEL_REGION ?? null,
       },
-      engineBundled,
-      enginePath,
-      python3,
-      python,
-      engineRun,
-      verdict:
-        python3.ok && engineRun.ok
-          ? "Python engine is executable from the Node runtime."
-          : "Python is NOT usable here — the engine needs its own service.",
+      // Presence only, never the value. It is an internal URL rather than a
+      // secret, but there is no reason to publish the engine's address.
+      engineUrlPresent: Boolean(engineUrl),
+      engine,
+      verdict: reachable
+        ? "Service binding works — the web service reached the engine."
+        : "Engine not reachable from the web service.",
     },
     { headers: { "cache-control": "no-store" } },
   );

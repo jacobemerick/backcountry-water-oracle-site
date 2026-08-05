@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Re-vendor engine/forecast.py from the upstream oracle repo.
+# Re-vendor services/engine/forecast.py from the upstream oracle repo.
 #
 # The engine is vendored rather than ported: it is ~700 lines of dependency-free
 # stdlib numerics, and a TypeScript port would mean maintaining two
@@ -25,13 +25,13 @@ fi
 
 git -C "$UPSTREAM" fetch origin --quiet
 SHA="$(git -C "$UPSTREAM" rev-parse "$REF")"
-PREV="$(cat "$HERE/engine/PINNED_COMMIT" 2>/dev/null || echo none)"
+PREV="$(cat "$HERE/services/engine/PINNED_COMMIT" 2>/dev/null || echo none)"
 
-git -C "$UPSTREAM" show "$REF:forecast.py" > "$HERE/engine/forecast.py"
-git -C "$UPSTREAM" show "$REF:LICENSE"     > "$HERE/engine/LICENSE"
-printf '%s\n' "$SHA" > "$HERE/engine/PINNED_COMMIT"
+git -C "$UPSTREAM" show "$REF:forecast.py" > "$HERE/services/engine/forecast.py"
+git -C "$UPSTREAM" show "$REF:LICENSE"     > "$HERE/services/engine/LICENSE"
+printf '%s\n' "$SHA" > "$HERE/services/engine/PINNED_COMMIT"
 
-echo "engine/forecast.py"
+echo "services/engine/forecast.py"
 echo "  was $PREV"
 echo "  now $SHA"
 
