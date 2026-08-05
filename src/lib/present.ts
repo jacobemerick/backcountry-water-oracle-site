@@ -1,0 +1,118 @@
+import type { SourceForecast } from "./forecast.ts";
+
+/**
+ * Presentation helpers — the layer that turns the engine's numbers into
+ * something a hiker can act on. Deliberately separate from rendering so the
+ * judgement calls here (what counts as too little data, what a correlation
+ * means in English) are testable and reviewable in one place.
+ */
+
+/**
+ * Below this many reports we refuse to show a verdict.
+ *
+ * The engine will happily correlate two observations and report r=+1.00 with
+ * "signal check: survives -> genuine rain response". On a CLI, where the
+ * operator knows the data, that is fine. On a public site where someone is
+ * deciding how much water to carry into the Sonoran desert in June, a
+ * confident number built on four observations is the single most dangerous
+ * thing this site could render. The engine's own docs call anything under 25
+ * "suggestive, not solid"; 10 is where we stop showing a verdict at all.
+ */
+export const MIN_REPORTS_FOR_VERDICT = 10;
+
+export type Confidence = "none" | "weak" | "moderate";
+
+export function confidenceOf(s: SourceForecast): Confidence {
+  if (s.n < MIN_REPORTS_FOR_VERDICT) return "none";
+  if (s.small_n) return "weak"; // engine flags n < 25
+  return "moderate";
+}
+
+/** Never "high" — see MIN_REPORTS_FOR_VERDICT. This model does not earn it. */
+export const CONFIDENCE_LABEL: Record<Confidence, string> = {
+  none: "Not enough data",
+  weak: "Weak confidence",
+  moderate: "Moderate confidence",
+};
+
+/** Maps the engine's predicted flow (0–1) onto the rubric language people report in. */
+export function flowLabel(flow: number): string {
+  if (flow < 0.1) return "Dry";
+  if (flow < 0.3) return "Pools / dripping";
+  if (flow < 0.5) return "Trickle";
+  if (flow < 0.7) return "Moderate";
+  if (flow < 0.9) return "Strong";
+  return "Raging";
+}
+
+/** Tone for the verdict banner. Dry and unknown are both "don't count on it". */
+export function verdictTone(s: SourceForecast): "dry" | "marginal" | "wet" | "unknown" {
+  if (confidenceOf(s) === "none") return "unknown";
+  if (s.predicted_flow < 0.1) return "dry";
+  if (s.predicted_flow < 0.5) return "marginal";
+  return "wet";
+}
+
+/**
+ * Plain-English gloss on a source's classification. "Spearman r = +0.62" means
+ * nothing to someone planning a water carry; "rain over the last 90 days
+ * predicts this one well" does.
+ */
+export function explainType(s: SourceForecast): string {
+  const w = s.best.days;
+  const strength = Math.abs(s.best.r);
+
+  if (s.type.startsWith("Reliable")) {
+    return (
+      `Dry only ${s.pct_dry}% of the time, and rainfall barely moves it. That decoupling ` +
+      `is exactly why it is dependable — it is fed by groundwater, not by last month's weather.`
+    );
+  }
+  if (s.type.startsWith("Flashy")) {
+    return (
+      `Driven by recent rain: the last ${w} days predict it better than any longer window ` +
+      `(${strength >= 0.5 ? "strongly" : "moderately"}). It turns on fast after storms and ` +
+      `off just as fast, and it is dry ${s.pct_dry}% of the time.`
+    );
+  }
+  return (
+    `Medium memory — the last ${w} days of rain predict it best. Typical of creeks with rock ` +
+    `tanks that hold water after the flow itself stops. Dry ${s.pct_dry}% of the time.`
+  );
+}
+
+/** How much of the headline correlation was borrowed from neighboring sources. */
+export function explainPooling(s: SourceForecast): string | null {
+  if (s.best.group_n <= 1) return null;
+  const pct = Math.round(s.best.borrowed * 100);
+  const neighbors = s.best.group_n - 1;
+  const n = `${neighbors} nearby source${neighbors === 1 ? "" : "s"}`;
+
+  if (pct < 15) {
+    return `Has enough of its own data to stand alone — only ${pct}% of this correlation is borrowed from ${n}.`;
+  }
+  if (pct < 50) {
+    return `${pct}% of this correlation is borrowed from ${n} that respond to rain the same way.`;
+  }
+  return (
+    `${pct}% of this correlation is borrowed from ${n}. On its own the record is too thin to ` +
+    `trust, so the reading leans on neighbors that demonstrably behave alike.`
+  );
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Twelve months, with gaps preserved as null — a month with no reports is not a dry month. */
+export function monthlyFlow(s: SourceForecast): { month: string; flow: number | null }[] {
+  return MONTHS.map((month, i) => {
+    const v = s.mean_flow_by_month[String(i + 1)];
+    return { month, flow: v === undefined ? null : v };
+  });
+}
+
+/** Most reliable first — the engine's own summary-table ordering. */
+export function byReliability(sources: SourceForecast[]): SourceForecast[] {
+  return [...sources].sort((a, b) => a.pct_dry - b.pct_dry);
+}
+
+export const signed = (n: number, digits = 2) => `${n >= 0 ? "+" : ""}${n.toFixed(digits)}`;
