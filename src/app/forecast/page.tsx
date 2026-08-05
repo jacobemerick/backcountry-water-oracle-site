@@ -12,11 +12,22 @@ export const metadata: Metadata = {
 };
 
 /**
- * Re-run at most hourly. The underlying precipitation record only advances
- * daily and ERA5 runs about six days behind, so a fresher read would be
- * fiction — and each cold coordinate costs a multi-second upstream fetch.
+ * Build-time only, deliberately, until the engine has a runtime home (#3).
+ *
+ * This page renders in production solely because Vercel's *build* container
+ * has a Python interpreter. The *runtime* does not — `spawn python3` there is
+ * ENOENT. With a time-based revalidate, the first regeneration would run in
+ * that runtime, get no engine, and — because load() handles that gracefully
+ * rather than throwing — Next would treat the "unavailable" state as a
+ * perfectly successful render and cache it over the good page. A silent
+ * downgrade an hour after deploy is worse than no revalidation at all.
+ *
+ * So: regenerate on deploy, and revisit the moment the engine is reachable
+ * over HTTP, at which point hourly is the right cadence (the precipitation
+ * record advances daily and ERA5 trails ~6 days, so anything fresher is
+ * fiction anyway).
  */
-export const revalidate = 3600;
+export const revalidate = false;
 
 type LoadResult =
   | { kind: "ok"; data: ForecastResult }
