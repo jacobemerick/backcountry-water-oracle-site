@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test 'src/**/*.test.ts' && npm run test:engine",
+    "test": "npm run typecheck && node --experimental-strip-types --test 'src/**/*.test.ts' && npm run test:engine",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "db:seed": "node --env-file-if-exists=.env.local scripts/seed.mjs",
-    "test:engine": "python3 -W ignore::ResourceWarning services/engine/test_app.py"
+    "test:engine": "python3 -W ignore::ResourceWarning services/engine/test_app.py",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

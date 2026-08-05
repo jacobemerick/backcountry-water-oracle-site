@@ -71,6 +71,54 @@ function SeasonBars({ source }: { source: SourceForecast }) {
   );
 }
 
+/**
+ * Why some reports are not in the numbers above.
+ *
+ * The two reasons are genuinely different and must not be collapsed. A report
+ * predating the precipitation record can never be correlated. A report *newer*
+ * than the record is only waiting: ERA5 trails about six days, so an
+ * observation from this week folds in on its own shortly.
+ *
+ * Saying "could not be used" to someone who reported water they saw two days
+ * ago is both wrong and discouraging, and the whole point of collecting
+ * reports is that people keep sending them.
+ */
+function ExcludedReports({ source }: { source: SourceForecast }) {
+  const { total, excluded_before_precip: before, excluded_after_precip: after } = source.reports;
+  const [recordStart, recordEnd] = source.reports.precip_span;
+
+  return (
+    <div className="rounded-lg border border-border bg-surface-sunk p-4 text-sm leading-relaxed text-muted">
+      <p>
+        <strong className="font-medium text-foreground">
+          {source.n} of {total} reports are in the numbers above.
+        </strong>
+      </p>
+      <ul className="mt-2 space-y-1">
+        {after > 0 && (
+          <li>
+            <span className="font-medium text-foreground">
+              {after} {after === 1 ? "is" : "are"} too recent to use yet.
+            </span>{" "}
+            The rainfall archive currently ends {recordEnd} and runs about a week behind, so
+            {after === 1 ? " it joins" : " they join"} the forecast once it catches up. Nothing to
+            do.
+          </li>
+        )}
+        {before > 0 && (
+          <li>
+            <span className="font-medium text-foreground">
+              {before} {before === 1 ? "predates" : "predate"} the rainfall record
+            </span>{" "}
+            (which starts {recordStart}), so {before === 1 ? "it" : "they"} cannot be correlated.
+            Still kept — it is a real observation, and a longer record may reach back one day.
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
 export function SourceCard({ source }: { source: SourceForecast }) {
   const confidence = confidenceOf(source);
   const tone = verdictTone(source);
@@ -135,27 +183,7 @@ export function SourceCard({ source }: { source: SourceForecast }) {
 
         <p className="text-sm leading-relaxed text-muted">{explainType(source)}</p>
 
-        {source.reports.total > source.n && (
-          <p className="rounded-lg border border-border bg-surface-sunk p-4 text-sm leading-relaxed text-muted">
-            <strong className="font-medium text-foreground">
-              {source.reports.total - source.n} of {source.reports.total} reports could not be used.
-            </strong>{" "}
-            {source.reports.excluded_before_precip > 0 && (
-              <>
-                {source.reports.excluded_before_precip} predate the precipitation record, which
-                starts {source.reports.precip_span[0]}.{" "}
-              </>
-            )}
-            {source.reports.excluded_after_precip > 0 && (
-              <>
-                {source.reports.excluded_after_precip} fall after it ends (
-                {source.reports.precip_span[1]}) — the archive runs about a week behind.{" "}
-              </>
-            )}
-            Every number above is computed from the {source.n} that remain, so treat them as
-            describing that subset rather than the full history.
-          </p>
-        )}
+        {source.reports.total > source.n && <ExcludedReports source={source} />}
 
         {showVerdict && (
           <div>

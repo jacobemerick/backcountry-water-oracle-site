@@ -8,6 +8,7 @@ import { EngineError, runForecast } from "@/lib/forecast";
 import { MIN_REPORTS_FOR_VERDICT } from "@/lib/present";
 import { formatDistance, formatLatLon } from "@/lib/coords";
 import { SourceCard } from "../../forecast/SourceCard";
+import { ReportForm } from "./ReportForm";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,15 @@ export default async function SourcePage({ params }: Props) {
             )}
           </div>
         )}
+
+        <section className="mt-10">
+          <ReportForm
+            slug={slug}
+            sourceName={source.name}
+            reportCount={rows.length}
+            minForVerdict={MIN_REPORTS_FOR_VERDICT}
+          />
+        </section>
 
         {rows.length > 0 && (
           <section className="mt-10">

@@ -40,6 +40,15 @@ export const RULES = {
   nearby: { limit: 120, windowSeconds: 60 },
 
   /**
+   * Reports are the point of the site, so this is looser than source creation
+   * -- somebody back from a week out has a genuine backlog to enter. Still
+   * bounded, because a poisoned corpus is the one damage that cannot be
+   * undone by deleting rows: nobody can tell afterwards which observations
+   * were real.
+   */
+  createReport: { limit: 60, windowSeconds: 3600 },
+
+  /**
    * Anything that runs the engine. The binding cost is upstream fetches, not
    * our own compute, which is why this is stricter than a page view deserves.
    */
