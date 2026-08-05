@@ -123,3 +123,43 @@ export async function createSource(input: {
   `) as Source[];
   return rows[0];
 }
+
+export type ReportRow = {
+  id: number;
+  observed_on: string;
+  score: number;
+  status: string | null;
+  provenance: string;
+};
+
+export async function reportsForSource(sourceId: number): Promise<ReportRow[]> {
+  const sql = db();
+  return (await sql`
+    SELECT id::int AS id, observed_on::text AS observed_on, score::float8 AS score, status, provenance
+    FROM reports
+    WHERE source_id = ${sourceId}
+    ORDER BY observed_on DESC, id DESC
+  `) as ReportRow[];
+}
+
+/**
+ * Record an observation.
+ *
+ * Deliberately no uniqueness check: two people can report one spring on the
+ * same day and disagree, and that disagreement is real signal about a marginal
+ * source rather than a data error. The seed corpus contains exactly this.
+ */
+export async function createReport(input: {
+  sourceId: number;
+  observedOn: string;
+  score: number;
+  status: string | null;
+}): Promise<ReportRow> {
+  const sql = db();
+  const rows = (await sql`
+    INSERT INTO reports (source_id, observed_on, score, status, provenance)
+    VALUES (${input.sourceId}, ${input.observedOn}, ${input.score}, ${input.status}, 'user')
+    RETURNING id::int AS id, observed_on::text AS observed_on, score::float8 AS score, status, provenance
+  `) as ReportRow[];
+  return rows[0];
+}
