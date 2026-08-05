@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* Palette: high-desert sandstone + water. Light is warm paper, dark is canyon
+   shade. Both tuned for long-form reading — this site's job is to explain a
+   statistical read honestly, so legibility beats contrast drama. */
+:root {
+  --background: #faf8f4;
+  --surface: #ffffff;
+  --surface-sunk: #f2eee6;
+  --foreground: #1c2024;
+  --muted: #5f6672;
+  --border: #e3ddd2;
+  --accent: #0e7490;
+  --accent-soft: #e0f2f7;
+  --warn: #8a4f0a;
+  --warn-soft: #fdf3e3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0e1116;
+    --surface: #161b22;
+    --surface-sunk: #11151b;
+    --foreground: #e8eaed;
+    --muted: #99a1ae;
+    --border: #262d38;
+    --accent: #38bdf8;
+    --accent-soft: #10222d;
+    --warn: #e0a458;
+    --warn-soft: #241a0e;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
