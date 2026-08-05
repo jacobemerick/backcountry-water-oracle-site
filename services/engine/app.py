@@ -74,12 +74,24 @@ def _run(params):
         src["reports"].sort()
     sources = list(sources_by_name.values())
 
+    # This mirrors forecast.main()'s three passes exactly. Duplicating the
+    # engine's orchestration is a liability -- it already drifted once, when
+    # analyze_base() gained the ability to return a base with n == 0 rather
+    # than None, and this loop fed that straight into finalize() and raised
+    # KeyError('ctrl'). Keep it in lockstep, and see the upstream issue asking
+    # for a supported programmatic entry point that removes the duplication.
     bases = []
     for src in sources:
         try:
             base = forecast.analyze_base(src, asof, use_cache, n_harm)
-            if base is None:
-                note("skip", "no reports within precip range", src["name"])
+            if base is None or base["n"] == 0:
+                # Say WHY. "you gave me nothing" and "all your reports predate
+                # the precipitation record" are very different problems.
+                note(
+                    "skip",
+                    forecast.excluded_note(base) if base else "no reports",
+                    src["name"],
+                )
                 continue
             bases.append(base)
         except Exception as exc:  # one bad source must not sink the request
@@ -102,15 +114,6 @@ def application(environ, start_response):
                 pinned = fh.read().strip()
         except OSError:
             pass
-        # TEMPORARY: reports whether the git-URL dependency in requirements.txt
-        # actually installed. Goes away with the probe (see requirements.txt).
-        try:
-            import packaging
-
-            git_dep = {"installed": True, "version": getattr(packaging, "__version__", "?")}
-        except Exception as exc:
-            git_dep = {"installed": False, "reason": f"{type(exc).__name__}: {exc}"}
-
         return _json(
             start_response,
             "200 OK",
@@ -119,7 +122,6 @@ def application(environ, start_response):
                 "python": sys.version.split()[0],
                 "engine_pinned_commit": pinned,
                 "windows": forecast.WINDOWS,
-                "git_dependency_probe": git_dep,
             },
         )
 
