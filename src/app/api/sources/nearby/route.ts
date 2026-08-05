@@ -1,5 +1,6 @@
 import { sourcesNear } from "@/lib/db";
 import { parseLatLon } from "@/lib/coords";
+import { RULES, limitByIp, rateLimitHeaders, tooManyRequests } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,11 @@ export const dynamic = "force-dynamic";
  * serves a map click and a pasted coordinate.
  */
 export async function GET(request: Request) {
+  const limit = await limitByIp(request.headers, "nearby", RULES.nearby);
+  if (!limit.allowed) {
+    return tooManyRequests(limit, "Too many lookups. Slow down a moment.");
+  }
+
   const params = new URL(request.url).searchParams;
 
   let lat: number;
@@ -38,7 +44,10 @@ export async function GET(request: Request) {
   const radiusKm = Math.min(50, Math.max(0.1, Number(params.get("radius_km")) || 2));
 
   try {
-    return Response.json({ point: { lat, lon }, radius_km: radiusKm, sources: await sourcesNear(lat, lon, radiusKm) });
+    return Response.json(
+      { point: { lat, lon }, radius_km: radiusKm, sources: await sourcesNear(lat, lon, radiusKm) },
+      { headers: rateLimitHeaders(limit) },
+    );
   } catch (e) {
     return Response.json(
       { error: e instanceof Error ? e.message : "Lookup failed." },

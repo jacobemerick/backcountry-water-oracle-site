@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
+import { guardEngineRun } from "@/lib/rate-limit";
 import { engineRowsForSources, findSourceBySlug, sourcesNear } from "@/lib/db";
 import { EngineError, runForecast } from "@/lib/forecast";
 import { MIN_REPORTS_FOR_VERDICT } from "@/lib/present";
@@ -38,11 +40,18 @@ export default async function SourcePage({ params }: Props) {
   let forecast = null;
   let engineError: string | null = null;
   if (rows.length >= MIN_REPORTS_FOR_VERDICT) {
-    try {
-      const result = await runForecast(allRows);
-      forecast = result.sources.find((s) => s.name === source.name) ?? null;
-    } catch (e) {
-      engineError = e instanceof EngineError ? e.message : String(e);
+    const guard = await guardEngineRun(await headers());
+    if (!guard.allowed) {
+      engineError =
+        `Busy — try again in about ${guard.retryAfterSeconds}s. Each uncached source costs ` +
+        "a fetch of nearly two decades of rainfall from a free archive, so this site limits itself.";
+    } else {
+      try {
+        const result = await runForecast(allRows);
+        forecast = result.sources.find((s) => s.name === source.name) ?? null;
+      } catch (e) {
+        engineError = e instanceof EngineError ? e.message : String(e);
+      }
     }
   }
 

@@ -1,5 +1,6 @@
 import { createSource, findSourceBySlug, listSourcesWithCounts, sourcesNear } from "@/lib/db";
 import { parseLatLon, slugify } from "@/lib/coords";
+import { RULES, limitByIp, rateLimitHeaders, sweepRateLimits, tooManyRequests } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,16 @@ const MAX_NOTES = 2000;
 const SAME_SOURCE_KM = 0.05;
 
 export async function POST(request: Request) {
+  // Before parsing anything: a write is the expensive, hard-to-undo action, and
+  // a junk source pollutes a corpus whose entire value is that it is real.
+  const limit = await limitByIp(request.headers, "create_source", RULES.createSource);
+  if (!limit.allowed) {
+    return tooManyRequests(
+      limit,
+      "Too many sources added recently. This is a slow, human-paced dataset — try again shortly.",
+    );
+  }
+
   let payload: unknown;
   try {
     payload = await request.json();
@@ -93,7 +104,13 @@ export async function POST(request: Request) {
     }
 
     const source = await createSource({ name, slug, lat, lon, notes });
-    return Response.json({ source, nearby }, { status: 201 });
+
+    // Opportunistic housekeeping on a path that is already writing and is
+    // rare by design. A cron would be tidier; a stale counter row costs
+    // nothing, so it does not warrant one.
+    if (Math.random() < 0.05) void sweepRateLimits();
+
+    return Response.json({ source, nearby }, { status: 201, headers: rateLimitHeaders(limit) });
   } catch (e) {
     return Response.json(
       { error: e instanceof Error ? e.message : "Could not create the source." },

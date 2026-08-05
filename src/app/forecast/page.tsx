@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
+import { guardEngineRun } from "@/lib/rate-limit";
 import { engineRowsForSources, listSources } from "@/lib/db";
 import { EngineError, runForecast, type ForecastResult } from "@/lib/forecast";
 import { CONFIDENCE_LABEL, byReliability, confidenceOf, signed } from "@/lib/present";
@@ -31,10 +33,16 @@ export const dynamic = "force-dynamic";
 type LoadResult =
   | { kind: "ok"; data: ForecastResult }
   | { kind: "empty" }
+  | { kind: "throttled"; retryAfterSeconds: number; scope: "client" | "global" }
   | { kind: "error"; message: string; detail?: string };
 
 async function load(): Promise<LoadResult> {
   try {
+    const guard = await guardEngineRun(await headers());
+    if (!guard.allowed) {
+      return { kind: "throttled", retryAfterSeconds: guard.retryAfterSeconds, scope: guard.scope };
+    }
+
     const sources = await listSources();
     if (sources.length === 0) return { kind: "empty" };
 
@@ -125,6 +133,25 @@ export default async function ForecastPage() {
             npm run db:seed
           </code>
           .
+        </p>
+      </Shell>
+    );
+  }
+
+  if (result.kind === "throttled") {
+    return (
+      <Shell>
+        <h1 className="py-10 text-3xl font-semibold tracking-tight">One moment</h1>
+        <p className="max-w-xl leading-relaxed text-muted">
+          {result.scope === "global"
+            ? "The forecast engine is busier than usual right now."
+            : "That is a lot of forecasts in a short time."}{" "}
+          Every uncached source costs a fetch of nearly two decades of daily rainfall from a free
+          weather archive, so this site limits itself rather than lean on that service.
+        </p>
+        <p className="mt-4 text-muted">
+          Try again in about {result.retryAfterSeconds} second
+          {result.retryAfterSeconds === 1 ? "" : "s"}.
         </p>
       </Shell>
     );
