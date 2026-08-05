@@ -6,7 +6,7 @@ import { toEngineCsv, type EngineRow } from "./engine-csv.ts";
  * - **HTTP** when `ENGINE_URL` is set. In production that variable is injected
  *   by a Vercel service binding, so the engine service is reachable internally
  *   without ever having a public route.
- * - **Subprocess** otherwise, spawning the vendored `engine/forecast.py`. This
+ * - **Subprocess** otherwise, spawning the vendored `services/engine/forecast.py`. This
  *   is the local-development path: `npm run dev` keeps working without running
  *   two services, as long as python3 is on PATH.
  *
@@ -19,7 +19,7 @@ import { toEngineCsv, type EngineRow } from "./engine-csv.ts";
  * bundle (it warns about exactly this), which bloated the build to ~200MB.
  */
 
-/** Mirrors the engine's own JSON output. See engine/forecast.py:source_json. */
+/** Mirrors the engine's own JSON output. See services/engine/forecast.py:source_json. */
 export type Correlation = {
   window: string;
   days: number;
@@ -40,11 +40,30 @@ export type BestWindow = {
   signal_check: string;
 };
 
+/**
+ * Report accounting, added upstream by the fix for engine #10. Reports outside
+ * the precipitation record used to be dropped silently, which meant `n` — and
+ * therefore %dry, mean flow and every correlation — quietly described a subset
+ * of the data. Now the engine says so, and the UI must too: "12 reports, 9
+ * usable" is a materially different claim from "9 reports".
+ */
+export type ReportAccounting = {
+  total: number;
+  /** Reports actually correlated. Always equals SourceForecast.n. */
+  used: number;
+  excluded_before_precip: number;
+  excluded_after_precip: number;
+  /** [first, last] of the precipitation record backing this source. */
+  precip_span: [string, string];
+};
+
 export type SourceForecast = {
   name: string;
   lat: number;
   lon: number;
+  /** Reports used. See `reports` for what was excluded and why. */
   n: number;
+  reports: ReportAccounting;
   small_n: boolean;
   pct_dry: number;
   mean_flow: number;
@@ -208,7 +227,7 @@ async function runAsSubprocess(
   const { spawn } = await import("node:child_process");
   const { join } = await import("node:path");
 
-  const enginePath = join(process.cwd(), "engine", "forecast.py");
+  const enginePath = join(process.cwd(), "services", "engine", "forecast.py");
   const python = process.env.PYTHON_BIN ?? "python3";
   const args = buildArgs(opts);
 
@@ -270,7 +289,7 @@ async function runAsSubprocess(
       } catch {
         reject(
           new EngineError(
-            "Engine stdout was not valid JSON. Is engine/forecast.py current with --json?",
+            "Engine stdout was not valid JSON. Is services/engine/forecast.py current with --json?",
             stderr || stdout.slice(0, 500),
           ),
         );
