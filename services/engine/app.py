@@ -102,6 +102,15 @@ def application(environ, start_response):
                 pinned = fh.read().strip()
         except OSError:
             pass
+        # TEMPORARY: reports whether the git-URL dependency in requirements.txt
+        # actually installed. Goes away with the probe (see requirements.txt).
+        try:
+            import packaging
+
+            git_dep = {"installed": True, "version": getattr(packaging, "__version__", "?")}
+        except Exception as exc:
+            git_dep = {"installed": False, "reason": f"{type(exc).__name__}: {exc}"}
+
         return _json(
             start_response,
             "200 OK",
@@ -110,6 +119,7 @@ def application(environ, start_response):
                 "python": sys.version.split()[0],
                 "engine_pinned_commit": pinned,
                 "windows": forecast.WINDOWS,
+                "git_dependency_probe": git_dep,
             },
         )
 

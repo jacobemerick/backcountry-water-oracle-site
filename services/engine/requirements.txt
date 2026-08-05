@@ -1,0 +1,20 @@
+# TEMPORARY PROBE — remove once the answer is recorded on site issue #3.
+#
+# Question: does Vercel's Python service build install a dependency from a git
+# URL? Their docs name requirements.txt/pyproject.toml as the manifest but say
+# nothing about git URLs. uv supports them and the build container has network,
+# so it should work — but "should work" is what cost us a failed deploy earlier
+# today, so measure it.
+#
+# This matters because the engine is about to become a git dependency instead
+# of a vendored copy (upstream #26). It cannot be the probe itself: it has no
+# pyproject.toml yet, so installing it would fail for the wrong reason and tell
+# us nothing about the mechanism.
+#
+# `packaging` stands in because it is pure Python with no runtime dependencies
+# of its own — the same shape the engine will have. Pinned to a tag so the
+# probe is reproducible.
+#
+# The engine keeps its zero-dependency promise: this file goes away with the
+# probe.
+packaging @ git+https://github.com/pypa/packaging@24.2
