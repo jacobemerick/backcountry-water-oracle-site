@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import type { EngineRow } from "./engine-csv";
+import type { EngineRow } from "./engine-csv.ts";
 
 /**
  * Neon over HTTP: one round trip per query, no pool to keep warm, which is what
