@@ -20,6 +20,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 from datetime import date
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +28,38 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 import forecast  # noqa: E402  (must follow the sys.path insert)
+
+
+def _writable_cache_dir():
+    """
+    The engine caches precipitation next to its own file. On Vercel that is
+    /var/task, which is read-only, so every request failed with
+
+        [Errno 30] Read-only file system: '/var/task/.cache'
+
+    and the page correctly reported three sources producing no forecast.
+
+    CACHE_DIR is documented as assignable for exactly this case. Probe the
+    default rather than test for a specific host, so this stays right anywhere.
+
+    /tmp is per-instance and ephemeral: it warms a hot instance and does
+    nothing for a cold one, which still pays a multi-second fetch per
+    coordinate. The durable fix is the shared Postgres-backed provider (site
+    #8), which plugs into PRECIP_PROVIDER and replaces this entirely.
+    """
+    default = forecast.CACHE_DIR
+    try:
+        os.makedirs(default, exist_ok=True)
+        probe = os.path.join(default, ".write-test")
+        with open(probe, "w") as fh:
+            fh.write("")
+        os.unlink(probe)
+        return default
+    except OSError:
+        return os.path.join(tempfile.gettempdir(), "bwo-precip-cache")
+
+
+forecast.CACHE_DIR = _writable_cache_dir()
 
 MAX_BODY = 8 * 1024 * 1024  # generous: a source with 5000 reports is ~250KB
 
