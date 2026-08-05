@@ -53,6 +53,21 @@ export type SourceForecast = {
   harmonics: number;
 };
 
+/**
+ * An engine diagnostic. These are objects, not strings — see forecast.py's
+ * `note(kind, msg, name)`. `source` is null for whole-run failures.
+ *
+ * A note means part of the request did not produce a forecast: a source was
+ * skipped, or its analysis failed. Never swallow them — a silently missing
+ * source reads as "we have no data on that spring" when the truth may be
+ * "the precipitation fetch failed".
+ */
+export type EngineNote = {
+  kind: "skip" | "error" | string;
+  source: string | null;
+  message: string;
+};
+
 export type ForecastResult = {
   asof: string;
   params: {
@@ -63,8 +78,7 @@ export type ForecastResult = {
     windows: number[];
   };
   sources: SourceForecast[];
-  /** Engine diagnostics ([skip]/[error]) — surfaced, never swallowed. */
-  notes: string[];
+  notes: EngineNote[];
 };
 
 export type ForecastOptions = {

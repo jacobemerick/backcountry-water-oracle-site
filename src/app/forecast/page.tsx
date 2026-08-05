@@ -154,12 +154,23 @@ export default async function ForecastPage() {
 
       {data.notes.length > 0 && (
         <div className="mb-8 rounded-lg border-l-2 border-warn bg-warn-soft p-4 text-sm">
-          <p className="font-medium text-warn">The engine reported:</p>
-          <ul className="mt-1 list-inside list-disc text-muted">
-            {data.notes.map((n) => (
-              <li key={n}>{n}</li>
+          <p className="font-medium text-warn">
+            {data.notes.length === 1 ? "One source" : `${data.notes.length} sources`} produced no
+            forecast
+          </p>
+          <ul className="mt-2 space-y-1 text-muted">
+            {data.notes.map((n, i) => (
+              <li key={`${n.kind}-${n.source ?? "run"}-${i}`}>
+                {n.source ? <span className="font-medium">{n.source}</span> : "This request"} —{" "}
+                {n.message}
+                {n.kind === "error" && " (error)"}
+              </li>
             ))}
           </ul>
+          <p className="mt-2 text-xs">
+            Listed rather than hidden: a missing source reads as &ldquo;no data on that
+            spring&rdquo; when the real cause may be a failed precipitation fetch.
+          </p>
         </div>
       )}
 

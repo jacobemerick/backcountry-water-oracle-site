@@ -1,0 +1,94 @@
+{
+  "asof": "2026-08-05",
+  "params": {
+    "pool": true,
+    "pool_radius_km": 25.0,
+    "harmonics": 1,
+    "cache": true,
+    "windows": [
+      30,
+      60,
+      90,
+      180,
+      270,
+      365
+    ]
+  },
+  "sources": [
+    {
+      "name": "Chilson Spring",
+      "lat": 34.08587,
+      "lon": -111.49097,
+      "n": 2,
+      "small_n": true,
+      "pct_dry": 0,
+      "mean_flow": 0.6,
+      "annual_precip_in": 19.4,
+      "type": "Reliable (groundwater-buffered)",
+      "mean_flow_by_month": {
+        "6": 0.2,
+        "10": 1.0
+      },
+      "correlations": [
+        {
+          "window": "30d",
+          "days": 30,
+          "raw_r": 1.0,
+          "ctrl_r": 1.0
+        },
+        {
+          "window": "60d",
+          "days": 60,
+          "raw_r": 1.0,
+          "ctrl_r": 1.0
+        },
+        {
+          "window": "90d",
+          "days": 90,
+          "raw_r": 1.0,
+          "ctrl_r": 1.0
+        },
+        {
+          "window": "180d",
+          "days": 180,
+          "raw_r": 1.0,
+          "ctrl_r": 1.0
+        },
+        {
+          "window": "270d",
+          "days": 270,
+          "raw_r": 1.0,
+          "ctrl_r": 1.0
+        },
+        {
+          "window": "365d",
+          "days": 365,
+          "raw_r": -1.0,
+          "ctrl_r": -1.0
+        }
+      ],
+      "best": {
+        "window": "30d",
+        "days": 30,
+        "r": 1.0,
+        "own_ctrl_r": 1.0,
+        "raw_r": 1.0,
+        "borrowed": 0.0,
+        "group_n": 1,
+        "signal_check": "survives -> genuine rain response"
+      },
+      "asof": "2026-07-30",
+      "precip_in": 4.613,
+      "predicted_flow": 0.6,
+      "verdict": "Likely flowing (moderate)",
+      "harmonics": 1
+    }
+  ],
+  "notes": [
+    {
+      "kind": "skip",
+      "source": "Ancient Tank",
+      "message": "no reports within precip range"
+    }
+  ]
+}
