@@ -42,10 +42,24 @@ contract (`source,lat,lon,date,score,status`), so there's no translation layer.
 
 ```bash
 npm install
-npm run dev      # http://localhost:3000
+npm run engine:install   # venv at services/engine/.venv from the pinned engine
+npm run dev              # http://localhost:3000
 npm run build
 npm run lint
-npm test         # node:test via --experimental-strip-types
+npm test                 # typecheck + node:test + the engine parity suite
+```
+
+`engine:install` is needed because the engine is a dependency rather than a
+checked-in file. Locally the site shells out to that venv's `water-forecast`;
+in production it calls the engine service over `ENGINE_URL` instead.
+
+To move to a different engine release:
+
+```bash
+./scripts/bump-engine.sh            # latest release
+./scripts/bump-engine.sh v0.2.0     # a specific tag
+npm run engine:install && npm test  # fixtures are recorded from the engine, so
+                                    # a contract change fails here — the point
 ```
 
 ### Database
