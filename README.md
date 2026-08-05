@@ -45,7 +45,35 @@ npm install
 npm run dev      # http://localhost:3000
 npm run build
 npm run lint
+npm test         # node:test via --experimental-strip-types
 ```
+
+### Database
+
+Create a Neon project, then:
+
+```bash
+cp .env.example .env.local     # paste your DATABASE_URL
+npm run db:migrate -- --dry    # show pending migrations
+npm run db:migrate             # apply them
+```
+
+Migrations are plain SQL in `db/migrations/`, applied forward-only in filename
+order and recorded in `_migrations`. There is no rollback — to undo something,
+write a new migration. The runner refuses to proceed if an already-applied file
+has been edited, since that means the file and the database have quietly
+diverged.
+
+To try the schema without Neon:
+
+```bash
+docker run -d --rm --name bwo-pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=bwo \
+  -p 55433:5432 postgis/postgis:16-3.4
+docker exec -i bwo-pg psql -U postgres -d bwo < db/migrations/0001_init.sql
+```
+
+PostGIS is required — `sources.geog` is a generated column, and the neighbor
+lookups behind pooling and route mode are `ST_DWithin` queries against it.
 
 ## Safety
 
