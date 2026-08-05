@@ -1,16 +1,23 @@
-import { spawn } from "node:child_process";
-import { join } from "node:path";
 import { toEngineCsv, type EngineRow } from "./engine-csv.ts";
 
 /**
- * Runs the vendored Python engine. The contract is deliberately narrow: CSV in
- * on stdin, one JSON object out on stdout, diagnostics on stderr. No temp files
- * -- a serverless filesystem is read-only outside /tmp, and writing a file just
- * to read it back would be pointless anyway.
+ * Runs the forecast engine over one of two transports, chosen by environment:
+ *
+ * - **HTTP** when `ENGINE_URL` is set. In production that variable is injected
+ *   by a Vercel service binding, so the engine service is reachable internally
+ *   without ever having a public route.
+ * - **Subprocess** otherwise, spawning the vendored `engine/forecast.py`. This
+ *   is the local-development path: `npm run dev` keeps working without running
+ *   two services, as long as python3 is on PATH.
+ *
+ * The subprocess path cannot work in production regardless — Vercel's Node
+ * runtime has no Python interpreter (verified: `spawn python3` is ENOENT) — so
+ * this is not a fallback so much as two environments with different plumbing.
+ *
+ * Note the spawn is behind a dynamic import. Statically importing
+ * node:child_process makes Turbopack trace the entire project into the server
+ * bundle (it warns about exactly this), which bloated the build to ~200MB.
  */
-
-const ENGINE = join(process.cwd(), "engine", "forecast.py");
-const PYTHON = process.env.PYTHON_BIN ?? "python3";
 
 /** Mirrors the engine's own JSON output. See engine/forecast.py:source_json. */
 export type Correlation = {
@@ -131,17 +138,89 @@ export async function runForecast(
   if (rows.length === 0) {
     throw new EngineError("No reports to forecast from.");
   }
-
-  const args = buildArgs(opts);
-  const csv = toEngineCsv(rows);
+  if (opts.asof !== undefined && !ISO_DATE.test(opts.asof)) {
+    // The engine parses this with date.fromisoformat and would throw a raw
+    // traceback on junk, so validate before it ever gets there.
+    throw new EngineError(`asof must be YYYY-MM-DD, got "${opts.asof}"`);
+  }
 
   // Generous default: a cold coordinate costs a multi-second upstream precip
   // fetch, and they run serially inside the engine. Once the Postgres precip
   // cache lands (site #8) this drops to milliseconds for warm coordinates.
   const timeoutMs = opts.timeoutMs ?? 60_000;
+  const csv = toEngineCsv(rows);
+
+  const engineUrl = process.env.ENGINE_URL;
+  return engineUrl
+    ? runOverHttp(engineUrl, csv, opts, timeoutMs)
+    : runAsSubprocess(csv, opts, timeoutMs);
+}
+
+async function runOverHttp(
+  base: string,
+  csv: string,
+  opts: ForecastOptions,
+  timeoutMs: number,
+): Promise<ForecastResult> {
+  const body = JSON.stringify({
+    csv,
+    asof: opts.asof,
+    harmonics: opts.harmonics,
+    pool: opts.pool,
+    pool_radius_km: opts.poolRadiusKm,
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(new URL("/", base), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(timeoutMs),
+      // The engine is deterministic for a given (csv, asof), but the precip it
+      // reads advances daily, so let the caller decide freshness rather than
+      // caching this indefinitely.
+      cache: "no-store",
+    });
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    throw new EngineError(`Engine service unreachable at ${base}: ${reason}`);
+  }
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new EngineError(`Engine service returned ${response.status}.`, text.slice(0, 500));
+  }
+  try {
+    return JSON.parse(text) as ForecastResult;
+  } catch {
+    throw new EngineError("Engine service response was not valid JSON.", text.slice(0, 500));
+  }
+}
+
+async function runAsSubprocess(
+  csv: string,
+  opts: ForecastOptions,
+  timeoutMs: number,
+): Promise<ForecastResult> {
+  // Dynamic import so node:child_process never lands in the production server
+  // bundle -- a static import makes Turbopack trace the whole project.
+  const { spawn } = await import("node:child_process");
+  const { join } = await import("node:path");
+
+  const enginePath = join(process.cwd(), "engine", "forecast.py");
+  const python = process.env.PYTHON_BIN ?? "python3";
+  const args = buildArgs(opts);
 
   return new Promise((resolve, reject) => {
-    const child = spawn(PYTHON, [ENGINE, ...args], { stdio: ["pipe", "pipe", "pipe"] });
+    // turbopackIgnore keeps Turbopack from tracing the entire project (source
+    // tree and node_modules) into the server bundle on account of this one
+    // call — it inflated the build cache to ~200MB. Safe because this path is
+    // development-only: production reaches the engine over ENGINE_URL, and the
+    // Vercel runtime has no Python to spawn regardless.
+    const child = spawn(/*turbopackIgnore: true*/ python, [enginePath, ...args], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
     const out: Buffer[] = [];
     const err: Buffer[] = [];
@@ -153,7 +232,7 @@ export async function runForecast(
       child.kill("SIGKILL");
       reject(
         new EngineError(
-          `Engine timed out after ${timeoutMs}ms (${rows.length} rows). ` +
+          `Engine timed out after ${timeoutMs}ms. ` +
             "Cold precipitation fetches are the usual cause.",
         ),
       );
@@ -166,7 +245,12 @@ export async function runForecast(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new EngineError(`Could not start ${PYTHON}: ${e.message}`));
+      reject(
+        new EngineError(
+          `Could not start ${python}: ${e.message}. ` +
+            "Set ENGINE_URL to use the engine service instead.",
+        ),
+      );
     });
 
     child.on("close", (code) => {

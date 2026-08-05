@@ -43,3 +43,7 @@ next-env.d.ts
 
 # vendored engine precip cache (runtime artifact)
 engine/.cache/
+
+# python bytecode
+__pycache__/
+*.pyc

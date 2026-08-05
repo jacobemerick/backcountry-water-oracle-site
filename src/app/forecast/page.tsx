@@ -12,22 +12,21 @@ export const metadata: Metadata = {
 };
 
 /**
- * Build-time only, deliberately, until the engine has a runtime home (#3).
+ * Rendered per request, not at build.
  *
- * This page renders in production solely because Vercel's *build* container
- * has a Python interpreter. The *runtime* does not — `spawn python3` there is
- * ENOENT. With a time-based revalidate, the first regeneration would run in
- * that runtime, get no engine, and — because load() handles that gracefully
- * rather than throwing — Next would treat the "unavailable" state as a
- * perfectly successful render and cache it over the good page. A silent
- * downgrade an hour after deploy is worse than no revalidation at all.
+ * The engine is reached over a Vercel service binding, and bindings resolve at
+ * runtime only — they are not available during builds. So this page cannot be
+ * prerendered: at build time there is no ENGINE_URL to call. That is also why
+ * the previous build-time snapshot had to go.
  *
- * So: regenerate on deploy, and revisit the moment the engine is reachable
- * over HTTP, at which point hourly is the right cadence (the precipitation
- * record advances daily and ERA5 trails ~6 days, so anything fresher is
- * fiction anyway).
+ * The cost is one engine call per request. That is tolerable now (a warm
+ * precipitation cache turns a three-source run into ~100ms) and stops being a
+ * question at all once the precip cache moves into Postgres (#8). If it does
+ * become one before then, the fix is unstable_cache around load() with an
+ * hourly window — the precipitation record advances daily and ERA5 trails
+ * about six days, so hourly is already more often than the data changes.
  */
-export const revalidate = false;
+export const dynamic = "force-dynamic";
 
 type LoadResult =
   | { kind: "ok"; data: ForecastResult }
