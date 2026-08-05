@@ -1,10 +1,10 @@
 """
 WSGI wrapper around the forecast engine.
 
-Deliberately a bare WSGI callable with no framework: the engine itself is
-stdlib-only and dependency-free, and there is no reason for its HTTP shell to
-be otherwise. Vercel loads a top-level `application` for WSGI apps, so this
-needs no requirements.txt at all.
+Deliberately a bare WSGI callable with no framework: the engine is stdlib-only
+and dependency-free by rule, and there is no reason for its HTTP shell to be
+otherwise. Vercel loads a top-level `application` for WSGI apps, so the only
+dependency here is the engine itself.
 
 Contract, mirroring the engine's own:
 
@@ -23,43 +23,22 @@ import sys
 import tempfile
 from datetime import date
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-if HERE not in sys.path:
-    sys.path.insert(0, HERE)
+# Where the engine keeps downloaded precipitation. Must be set before importing
+# the package, which resolves CACHE_DIR at import time.
+#
+# The engine's own default is sensible everywhere else: an explicit
+# WATER_ORACLE_CACHE, else a source checkout's .cache/, else the platform user
+# cache. On a serverless function none of those are reliably writable -- the
+# deployment bundle is read-only, which is what produced
+# "[Errno 30] Read-only file system: '/var/task/.cache'" in production before.
+# /tmp always is.
+#
+# Per-instance and ephemeral, so it warms a hot instance and does nothing for a
+# cold one. The durable fix is the shared Postgres-backed provider (site #8),
+# which plugs into PRECIP_PROVIDER and replaces this line.
+os.environ.setdefault("WATER_ORACLE_CACHE", os.path.join(tempfile.gettempdir(), "bwo-precip-cache"))
 
-import forecast  # noqa: E402  (must follow the sys.path insert)
-
-
-def _writable_cache_dir():
-    """
-    The engine caches precipitation next to its own file. On Vercel that is
-    /var/task, which is read-only, so every request failed with
-
-        [Errno 30] Read-only file system: '/var/task/.cache'
-
-    and the page correctly reported three sources producing no forecast.
-
-    CACHE_DIR is documented as assignable for exactly this case. Probe the
-    default rather than test for a specific host, so this stays right anywhere.
-
-    /tmp is per-instance and ephemeral: it warms a hot instance and does
-    nothing for a cold one, which still pays a multi-second fetch per
-    coordinate. The durable fix is the shared Postgres-backed provider (site
-    #8), which plugs into PRECIP_PROVIDER and replaces this entirely.
-    """
-    default = forecast.CACHE_DIR
-    try:
-        os.makedirs(default, exist_ok=True)
-        probe = os.path.join(default, ".write-test")
-        with open(probe, "w") as fh:
-            fh.write("")
-        os.unlink(probe)
-        return default
-    except OSError:
-        return os.path.join(tempfile.gettempdir(), "bwo-precip-cache")
-
-
-forecast.CACHE_DIR = _writable_cache_dir()
+import backcountry_water_oracle as engine  # noqa: E402  (must follow the env default)
 
 MAX_BODY = 8 * 1024 * 1024  # generous: a source with 5000 reports is ~250KB
 
@@ -86,75 +65,40 @@ def _run(params):
     if params.get("asof"):
         asof = date.fromisoformat(str(params["asof"])[:10])
 
-    n_harm = int(params.get("harmonics", 1))
-    radius_km = float(params.get("pool_radius_km", forecast.POOL_RADIUS_KM))
-    do_pool = params.get("pool", True) is not False
-    use_cache = params.get("cache", True) is not False
+    # engine.run() is the supported entry point: it is what the CLI does minus
+    # argument parsing, sharing the same internals, so the service and
+    # `water-forecast` cannot answer differently for the same input.
+    #
+    # This wrapper used to reimplement those passes and reach into a private
+    # loader, because neither had a public equivalent. That copy drifted on the
+    # first upstream sync after it was written and returned 500 on input the
+    # CLI handled fine. Do not reintroduce it.
+    sources = engine.load_sources_from([io.StringIO(csv_text)], labels=["<request>"])
 
-    notes = []
-
-    def note(kind, msg, name=None):
-        notes.append({"kind": kind, "source": name, "message": msg})
-
-    # The engine's public loader, load_sources(), only takes paths or "-" for
-    # stdin -- neither of which fits a request body. _read_csv() is the piece
-    # that actually accepts a file object, so use it and then replicate the
-    # sort load_sources() does afterwards. Private-API use is the one wart
-    # here; upstream issue filed to expose a supported entry point.
-    sources_by_name = {}
-    forecast._read_csv(io.StringIO(csv_text), "<request>", sources_by_name)
-    for src in sources_by_name.values():
-        src["reports"].sort()
-    sources = list(sources_by_name.values())
-
-    # This mirrors forecast.main()'s three passes exactly. Duplicating the
-    # engine's orchestration is a liability -- it already drifted once, when
-    # analyze_base() gained the ability to return a base with n == 0 rather
-    # than None, and this loop fed that straight into finalize() and raised
-    # KeyError('ctrl'). Keep it in lockstep, and see the upstream issue asking
-    # for a supported programmatic entry point that removes the duplication.
-    bases = []
-    for src in sources:
-        try:
-            base = forecast.analyze_base(src, asof, use_cache, n_harm)
-            if base is None or base["n"] == 0:
-                # Say WHY. "you gave me nothing" and "all your reports predate
-                # the precipitation record" are very different problems.
-                note(
-                    "skip",
-                    forecast.excluded_note(base) if base else "no reports",
-                    src["name"],
-                )
-                continue
-            bases.append(base)
-        except Exception as exc:  # one bad source must not sink the request
-            note("error", str(exc), src["name"])
-
-    if do_pool and len(bases) > 1:
-        forecast.pool_controlled(bases, radius_km)
-
-    rows = [forecast.finalize(b) for b in bases]
-    return forecast.run_json(rows, notes, asof, do_pool, radius_km, n_harm, use_cache)
+    return engine.run(
+        sources,
+        asof,
+        harmonics=int(params.get("harmonics", 1)),
+        pool=params.get("pool", True) is not False,
+        pool_radius_km=float(params.get("pool_radius_km", engine.POOL_RADIUS_KM)),
+        use_cache=params.get("cache", True) is not False,
+    )
 
 
 def application(environ, start_response):
     if environ.get("REQUEST_METHOD") == "GET":
-        # Liveness probe: confirms the interpreter, the engine import and the
-        # pinned commit in one call.
-        pinned = "unknown"
-        try:
-            with open(os.path.join(HERE, "PINNED_COMMIT")) as fh:
-                pinned = fh.read().strip()
-        except OSError:
-            pass
+        # Liveness probe: interpreter, engine import and engine version in one
+        # call. /api/diag on the web service proxies this, which is the only way
+        # to observe a service that has no public route of its own.
         return _json(
             start_response,
             "200 OK",
             {
                 "ok": True,
                 "python": sys.version.split()[0],
-                "engine_pinned_commit": pinned,
-                "windows": forecast.WINDOWS,
+                "engine_version": engine.__version__,
+                "cache_dir": engine.CACHE_DIR,
+                "windows": engine.WINDOWS,
             },
         )
 

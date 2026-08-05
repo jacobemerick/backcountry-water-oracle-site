@@ -1,0 +1,16 @@
+# The engine, installed rather than vendored.
+#
+# It used to be a byte copy of forecast.py kept in step by a sync script. As of
+# v0.1.0 it is a real package with a pyproject.toml, so it can be pinned like
+# any other dependency -- which removes the copy, the sync script, and the
+# whole class of "the vendored file drifted from upstream" bug that already bit
+# once.
+#
+# Pinned to a tag rather than a SHA now that releases exist. A tag is mutable
+# in principle; in practice this one is a published GitHub release, and the tag
+# is what the changelog and the version number refer to. `pip` resolves it to a
+# commit at install time either way.
+#
+# Verified that Vercel's Python build installs from a git URL before committing
+# to this (see #3).
+backcountry-water-oracle @ git+https://github.com/jacobemerick/backcountry-water-oracle@v0.1.0

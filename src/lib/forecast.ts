@@ -6,9 +6,11 @@ import { toEngineCsv, type EngineRow } from "./engine-csv.ts";
  * - **HTTP** when `ENGINE_URL` is set. In production that variable is injected
  *   by a Vercel service binding, so the engine service is reachable internally
  *   without ever having a public route.
- * - **Subprocess** otherwise, spawning the vendored `services/engine/forecast.py`. This
+ * - **Subprocess** otherwise, invoking the engine's `water-forecast` CLI. This
  *   is the local-development path: `npm run dev` keeps working without running
- *   two services, as long as python3 is on PATH.
+ *   two services. The engine is no longer vendored, so this needs it installed
+ *   — `npm run engine:install` creates services/engine/.venv from the pinned
+ *   requirements, and that is where this looks first.
  *
  * The subprocess path cannot work in production regardless — Vercel's Node
  * runtime has no Python interpreter (verified: `spawn python3` is ENOENT) — so
@@ -19,7 +21,7 @@ import { toEngineCsv, type EngineRow } from "./engine-csv.ts";
  * bundle (it warns about exactly this), which bloated the build to ~200MB.
  */
 
-/** Mirrors the engine's own JSON output. See services/engine/forecast.py:source_json. */
+/** Mirrors the engine's own JSON output. See the engine's source_json(). */
 export type Correlation = {
   window: string;
   days: number;
@@ -226,9 +228,14 @@ async function runAsSubprocess(
   // bundle -- a static import makes Turbopack trace the whole project.
   const { spawn } = await import("node:child_process");
   const { join } = await import("node:path");
+  const { existsSync } = await import("node:fs");
 
-  const enginePath = join(process.cwd(), "services", "engine", "forecast.py");
-  const python = process.env.PYTHON_BIN ?? "python3";
+  // Prefer the project-local venv, so a checkout works after one setup command
+  // without touching the system Python. Fall back to whatever is on PATH for
+  // anyone who installed the engine themselves.
+  const venvCli = join(process.cwd(), "services", "engine", ".venv", "bin", "water-forecast");
+  const engineCli =
+    process.env.ENGINE_CLI ?? (existsSync(venvCli) ? venvCli : "water-forecast");
   const args = buildArgs(opts);
 
   return new Promise((resolve, reject) => {
@@ -237,7 +244,7 @@ async function runAsSubprocess(
     // call — it inflated the build cache to ~200MB. Safe because this path is
     // development-only: production reaches the engine over ENGINE_URL, and the
     // Vercel runtime has no Python to spawn regardless.
-    const child = spawn(/*turbopackIgnore: true*/ python, [enginePath, ...args], {
+    const child = spawn(/*turbopackIgnore: true*/ engineCli, args, {
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -266,8 +273,8 @@ async function runAsSubprocess(
       clearTimeout(timer);
       reject(
         new EngineError(
-          `Could not start ${python}: ${e.message}. ` +
-            "Set ENGINE_URL to use the engine service instead.",
+          `Could not start the engine (${engineCli}): ${e.message}. ` +
+            "Run `npm run engine:install`, or set ENGINE_URL to use the engine service.",
         ),
       );
     });
@@ -289,7 +296,7 @@ async function runAsSubprocess(
       } catch {
         reject(
           new EngineError(
-            "Engine stdout was not valid JSON. Is services/engine/forecast.py current with --json?",
+            "Engine stdout was not valid JSON. Is the installed engine current with --json?",
             stderr || stdout.slice(0, 500),
           ),
         );

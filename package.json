@@ -10,8 +10,9 @@
     "test": "npm run typecheck && node --experimental-strip-types --test 'src/**/*.test.ts' && npm run test:engine",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "db:seed": "node --env-file-if-exists=.env.local scripts/seed.mjs",
-    "test:engine": "python3 -W ignore::ResourceWarning services/engine/test_app.py",
-    "typecheck": "tsc --noEmit"
+    "test:engine": "services/engine/.venv/bin/python -W ignore::ResourceWarning services/engine/test_app.py",
+    "typecheck": "tsc --noEmit",
+    "engine:install": "python3 -m venv services/engine/.venv && services/engine/.venv/bin/pip install -q -r services/engine/requirements.txt && services/engine/.venv/bin/water-forecast --version"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

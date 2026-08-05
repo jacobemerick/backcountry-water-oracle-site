@@ -1,17 +1,21 @@
 """
 The service must agree with the CLI, byte for byte.
 
-app.py reimplements forecast.main()'s three passes, because main() is welded to
-argv, files and stdout. That duplication is a standing liability, and it has
-already bitten once: when analyze_base() gained the ability to return a base
-with n == 0 instead of None, this service fed that into finalize() and returned
-500 KeyError('ctrl') for a case the CLI handled fine.
+This mattered enormously when app.py reimplemented the engine's three passes:
+that copy drifted on the first upstream sync and returned 500 on input the CLI
+handled fine, and the site's TypeScript fixtures missed it because they are
+recorded from the CLI while production runs the service.
 
-The site's TypeScript fixtures did not catch it, because they are recorded from
-the CLI while production runs the service. That gap is exactly what this file
-closes: run the same CSV through both and demand identical JSON.
+Since engine v0.1.0 the wrapper calls the public run(), which shares its
+internals with the CLI, so divergence is now structurally impossible rather
+than merely tested against. These stay as a regression guard on the wiring --
+they would catch the wrapper passing the wrong argument, or a future engine
+release changing the payload shape.
 
-    python3 services/engine/test_app.py       (or `npm test`, which runs it)
+Requires the engine installed: `npm run engine:install`.
+
+    npm test                     (runs this)
+    services/engine/.venv/bin/python services/engine/test_app.py
 """
 
 import io
@@ -26,8 +30,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from app import application  # noqa: E402
+import backcountry_water_oracle as engine  # noqa: E402
 
-ENGINE = os.path.join(HERE, "forecast.py")
+# The installed console script, from the same venv running this file.
+ENGINE_CLI = os.path.join(os.path.dirname(sys.executable), "water-forecast")
 
 # Two sources: one usable, one whose reports all predate the precipitation
 # record. The second is the case that broke -- it must be skipped with an
@@ -64,7 +70,7 @@ def via_cli(csv_text, *args):
         path = fh.name
     try:
         proc = subprocess.run(
-            [sys.executable, ENGINE, path, "--json", *args],
+            [ENGINE_CLI, path, "--json", *args],
             capture_output=True,
             text=True,
             timeout=180,
@@ -119,7 +125,22 @@ class RequestHandling(unittest.TestCase):
         captured = {}
         out = b"".join(application(env, lambda s, h: captured.update(status=s)))
         self.assertEqual(captured["status"], "200 OK")
-        self.assertTrue(json.loads(out)["ok"])
+        health = json.loads(out)
+        self.assertTrue(health["ok"])
+        # The version is how a deployment is identified now that there is no
+        # vendored file to inspect.
+        self.assertEqual(health["engine_version"], engine.__version__)
+
+    def test_cache_dir_is_writable(self):
+        # The engine picks a cache directory at import. Its default is right for
+        # a checkout and wrong inside a read-only deployment bundle, which is
+        # what produced "[Errno 30] Read-only file system: '/var/task/.cache'"
+        # in production. app.py sets WATER_ORACLE_CACHE before importing.
+        os.makedirs(engine.CACHE_DIR, exist_ok=True)
+        probe = os.path.join(engine.CACHE_DIR, ".write-test")
+        with open(probe, "w") as fh:
+            fh.write("")
+        os.unlink(probe)
 
     def test_rejects_bad_input(self):
         cases = [

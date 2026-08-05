@@ -48,3 +48,6 @@ next-env.d.ts
 # python bytecode
 __pycache__/
 *.pyc
+
+# local engine venv (installed from services/engine/requirements.txt)
+services/engine/.venv/
