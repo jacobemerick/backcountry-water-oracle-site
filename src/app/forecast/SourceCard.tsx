@@ -1,8 +1,12 @@
 import type { SourceForecast } from "@/lib/forecast";
 import {
   CONFIDENCE_LABEL,
+  FRESHNESS_LABEL,
+  FRESHNESS_NOTE,
   MIN_REPORTS_FOR_VERDICT,
   confidenceOf,
+  describeAge,
+  freshnessOf,
   explainPooling,
   explainType,
   flowLabel,
@@ -119,7 +123,30 @@ function ExcludedReports({ source }: { source: SourceForecast }) {
   );
 }
 
-export function SourceCard({ source }: { source: SourceForecast }) {
+/**
+ * The engine's own standing caveat, shown when it actually applies.
+ *
+ * ERA5 averages over a ~9–11 km grid, so it smooths isolated convective cells.
+ * In the Southwest monsoon that is precisely the rainfall that fills a tank,
+ * which makes warm-season reads least trustworthy exactly when a dry spring is
+ * most consequential. The engine prints this on every run; here it is attached
+ * to the reads it bears on rather than to all of them, so it keeps its force.
+ */
+function monsoonCaveat(asof: string): boolean {
+  const month = Number(asof.slice(5, 7));
+  return month >= 6 && month <= 9;
+}
+
+export function SourceCard({
+  source,
+  lastReported = null,
+}: {
+  source: SourceForecast;
+  /** From the database — the engine has no idea when it was last visited. */
+  lastReported?: string | null;
+}) {
+  const freshness = freshnessOf(lastReported);
+  const freshnessNote = FRESHNESS_NOTE[freshness];
   const confidence = confidenceOf(source);
   const tone = verdictTone(source);
   const pooling = explainPooling(source);
@@ -132,6 +159,18 @@ export function SourceCard({ source }: { source: SourceForecast }) {
         <p className="mt-1 font-mono text-xs text-muted">
           {source.lat.toFixed(5)}, {source.lon.toFixed(5)} · ~{source.annual_precip_in.toFixed(0)}
           &Prime;/yr
+        </p>
+        <p className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span
+            className={`rounded-sm px-1.5 py-0.5 font-mono ${
+              freshness === "fresh" || freshness === "recent"
+                ? "bg-accent-soft text-accent"
+                : "bg-warn-soft text-warn"
+            }`}
+          >
+            {FRESHNESS_LABEL[freshness]}
+          </span>
+          <span className="text-muted">last reported {describeAge(lastReported)}</span>
         </p>
       </header>
 
@@ -182,6 +221,21 @@ export function SourceCard({ source }: { source: SourceForecast }) {
         </dl>
 
         <p className="text-sm leading-relaxed text-muted">{explainType(source)}</p>
+
+        {freshnessNote && (
+          <p className="rounded-lg border-l-2 border-warn bg-warn-soft p-4 text-sm leading-relaxed">
+            {freshnessNote}
+          </p>
+        )}
+
+        {showVerdict && monsoonCaveat(source.asof) && (
+          <p className="rounded-lg border-l-2 border-warn bg-warn-soft p-4 text-sm leading-relaxed">
+            <strong className="font-semibold text-warn">Warm-season read.</strong> The rainfall
+            model averages over roughly a 9&ndash;11 km grid, so it smooths out the isolated
+            monsoon storms that actually fill tanks. This read is least reliable right now, which
+            is exactly when a dry spring costs the most. Check radar before committing.
+          </p>
+        )}
 
         {source.reports.total > source.n && <ExcludedReports source={source} />}
 
