@@ -1,4 +1,5 @@
 import { toEngineCsv, type EngineRow } from "./engine-csv.ts";
+import { collectSeries, type DailySeries } from "./precip.ts";
 
 /**
  * Runs the forecast engine over one of two transports, chosen by environment:
@@ -112,6 +113,12 @@ export type ForecastResult = {
 export type ForecastOptions = {
   /** Read the sources as of this date (YYYY-MM-DD). Defaults to today. */
   asof?: string;
+  /**
+   * Supply precipitation from the shared Postgres cache instead of letting the
+   * engine fetch it. Default true over HTTP; ignored for the local subprocess
+   * path, which has no way to inject a provider into a CLI.
+   */
+  useSharedPrecip?: boolean;
   /** Annual harmonics for season control. 2 suits bimodal climates like Arizona. */
   harmonics?: number;
   poolRadiusKm?: number;
@@ -172,9 +179,23 @@ export async function runForecast(
   const csv = toEngineCsv(rows);
 
   const engineUrl = process.env.ENGINE_URL;
-  return engineUrl
-    ? runOverHttp(engineUrl, csv, opts, timeoutMs)
-    : runAsSubprocess(csv, opts, timeoutMs);
+  if (!engineUrl) return runAsSubprocess(csv, opts, timeoutMs);
+
+  // Gather the coordinates this run needs from the shared cache, in parallel,
+  // before the engine would fetch them one at a time. Failing to gather is not
+  // fatal: anything missing falls through to the engine's own provider.
+  let precip: Record<string, DailySeries> | undefined;
+  if (opts.useSharedPrecip !== false) {
+    try {
+      const asof = opts.asof ?? new Date().toISOString().slice(0, 10);
+      const bundle = await collectSeries(rows, asof, { timeoutMs });
+      if (Object.keys(bundle.series).length > 0) precip = bundle.series;
+    } catch {
+      // Shared cache unavailable — the engine still knows how to fetch.
+    }
+  }
+
+  return runOverHttp(engineUrl, csv, opts, timeoutMs, precip);
 }
 
 async function runOverHttp(
@@ -182,6 +203,7 @@ async function runOverHttp(
   csv: string,
   opts: ForecastOptions,
   timeoutMs: number,
+  precip?: Record<string, DailySeries>,
 ): Promise<ForecastResult> {
   const body = JSON.stringify({
     csv,
@@ -189,6 +211,7 @@ async function runOverHttp(
     harmonics: opts.harmonics,
     pool: opts.pool,
     pool_radius_km: opts.poolRadiusKm,
+    precip,
   });
 
   let response: Response;
