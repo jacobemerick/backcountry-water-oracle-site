@@ -28,6 +28,8 @@ export default async function SourcePage({ params }: Props) {
   if (!source) notFound();
 
   const rows = await engineRowsForSources([source.id]);
+  // rows come back ordered by date, so the last one is the most recent sighting.
+  const lastReported = rows.length > 0 ? rows[rows.length - 1].date : null;
 
   // Pull in neighbours so pooling has something to borrow from — the engine
   // lends a thin source strength from nearby ones that respond to rain the
@@ -77,7 +79,7 @@ export default async function SourcePage({ params }: Props) {
         </div>
 
         {forecast ? (
-          <SourceCard source={forecast} />
+          <SourceCard source={forecast} lastReported={lastReported} />
         ) : (
           <div className="rounded-lg border border-border bg-surface p-6">
             <h2 className="text-lg font-semibold">

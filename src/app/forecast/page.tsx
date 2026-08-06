@@ -2,9 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { guardEngineRun } from "@/lib/rate-limit";
-import { engineRowsForSources, listSources } from "@/lib/db";
+import { engineRowsForSources, listSourcesWithCounts } from "@/lib/db";
 import { EngineError, runForecast, type ForecastResult } from "@/lib/forecast";
-import { CONFIDENCE_LABEL, byReliability, confidenceOf, signed } from "@/lib/present";
+import {
+  CONFIDENCE_LABEL,
+  FRESHNESS_LABEL,
+  byReliability,
+  confidenceOf,
+  describeAge,
+  freshnessOf,
+  signed,
+} from "@/lib/present";
 import { SourceCard } from "./SourceCard";
 
 export const metadata: Metadata = {
@@ -30,8 +38,11 @@ export const metadata: Metadata = {
  */
 export const dynamic = "force-dynamic";
 
+/** Last-reported date per source name, which the engine does not carry. */
+type LastReported = Record<string, string | null>;
+
 type LoadResult =
-  | { kind: "ok"; data: ForecastResult }
+  | { kind: "ok"; data: ForecastResult; lastReported: LastReported }
   | { kind: "empty" }
   | { kind: "throttled"; retryAfterSeconds: number; scope: "client" | "global" }
   | { kind: "error"; message: string; detail?: string };
@@ -43,13 +54,16 @@ async function load(): Promise<LoadResult> {
       return { kind: "throttled", retryAfterSeconds: guard.retryAfterSeconds, scope: guard.scope };
     }
 
-    const sources = await listSources();
+    const sources = await listSourcesWithCounts();
     if (sources.length === 0) return { kind: "empty" };
 
     const rows = await engineRowsForSources(sources.map((s) => s.id));
     if (rows.length === 0) return { kind: "empty" };
 
-    return { kind: "ok", data: await runForecast(rows) };
+    const lastReported: LastReported = {};
+    for (const s of sources) lastReported[s.name] = s.last_reported;
+
+    return { kind: "ok", data: await runForecast(rows), lastReported };
   } catch (e) {
     if (e instanceof EngineError) {
       return { kind: "error", message: e.message, detail: e.stderr || undefined };
@@ -58,7 +72,13 @@ async function load(): Promise<LoadResult> {
   }
 }
 
-function SummaryTable({ sources }: { sources: ForecastResult["sources"] }) {
+function SummaryTable({
+  sources,
+  lastReported,
+}: {
+  sources: ForecastResult["sources"];
+  lastReported: LastReported;
+}) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full min-w-[34rem] text-sm">
@@ -69,6 +89,7 @@ function SummaryTable({ sources }: { sources: ForecastResult["sources"] }) {
             <th className="px-3 py-2 text-right font-medium">Dry</th>
             <th className="px-3 py-2 text-right font-medium">Best window</th>
             <th className="px-3 py-2 text-right font-medium">r*</th>
+            <th className="px-3 py-2 font-medium">Last seen</th>
             <th className="px-4 py-2 font-medium">Read</th>
           </tr>
         </thead>
@@ -90,6 +111,16 @@ function SummaryTable({ sources }: { sources: ForecastResult["sources"] }) {
                 <td className="px-3 py-2.5 text-right font-mono text-xs">{s.best.window}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums">
                   {signed(s.best.r)}
+                </td>
+                <td
+                  className={`px-3 py-2.5 text-xs ${
+                    ["aging", "stale", "unknown"].includes(freshnessOf(lastReported[s.name] ?? null))
+                      ? "text-warn"
+                      : "text-muted"
+                  }`}
+                  title={FRESHNESS_LABEL[freshnessOf(lastReported[s.name] ?? null)]}
+                >
+                  {describeAge(lastReported[s.name] ?? null)}
                 </td>
                 <td className="px-4 py-2.5">
                   {confidence === "none" ? (
@@ -211,7 +242,7 @@ export default async function ForecastPage() {
         </div>
       )}
 
-      <SummaryTable sources={ordered} />
+      <SummaryTable sources={ordered} lastReported={result.lastReported} />
 
       <p className="mt-3 text-xs leading-relaxed text-muted">
         <strong className="font-medium">r*</strong> is the season-controlled rain correlation,
@@ -229,7 +260,7 @@ export default async function ForecastPage() {
 
       <div className="mt-12 space-y-8">
         {ordered.map((s) => (
-          <SourceCard key={s.name} source={s} />
+          <SourceCard key={s.name} source={s} lastReported={result.lastReported[s.name] ?? null} />
         ))}
       </div>
     </Shell>

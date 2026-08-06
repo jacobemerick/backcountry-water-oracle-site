@@ -116,3 +116,73 @@ export function byReliability(sources: SourceForecast[]): SourceForecast[] {
 }
 
 export const signed = (n: number, digits = 2) => `${n >= 0 ? "+" : ""}${n.toFixed(digits)}`;
+
+/**
+ * Report freshness.
+ *
+ * A source last seen in 2019 and one seen last week must not look alike, and
+ * the engine says nothing about this — its numbers describe how flow tracks
+ * rainfall, a relationship that does not decay. What decays is our confidence
+ * that the *place* is unchanged. Springs get developed, boxes collapse, roads
+ * wash out, a wildfire changes a whole catchment's runoff. None of that shows
+ * up in a correlation.
+ *
+ * So this is deliberately not folded into the confidence rating: it is a
+ * separate axis, and a well-sampled stale source is a genuinely different thing
+ * from a thinly-sampled fresh one.
+ */
+export type Freshness = "fresh" | "recent" | "aging" | "stale" | "unknown";
+
+/** Thresholds in days, chosen around how a hiking season works. */
+const FRESHNESS_DAYS: [Freshness, number][] = [
+  ["fresh", 90], // within a season
+  ["recent", 365], // within a year — the same season, last year
+  ["aging", 365 * 3],
+];
+
+export function freshnessOf(lastReported: string | null, today = new Date()): Freshness {
+  if (!lastReported) return "unknown";
+  const days = Math.floor(
+    (Date.parse(`${today.toISOString().slice(0, 10)}T00:00:00Z`) -
+      Date.parse(`${lastReported}T00:00:00Z`)) /
+      86_400_000,
+  );
+  if (days < 0) return "fresh";
+  for (const [label, limit] of FRESHNESS_DAYS) if (days < limit) return label;
+  return "stale";
+}
+
+export const FRESHNESS_LABEL: Record<Freshness, string> = {
+  fresh: "Reported this season",
+  recent: "Reported within a year",
+  aging: "Nothing recent",
+  stale: "Long unreported",
+  unknown: "Never reported",
+};
+
+/** Why it matters, in terms of what could have changed on the ground. */
+export const FRESHNESS_NOTE: Record<Freshness, string | null> = {
+  fresh: null,
+  recent: null,
+  aging:
+    "Nobody has reported this in over a year. The rainfall relationship does not go stale, but the place can — spring boxes fail, channels move, fire changes how a catchment sheds water.",
+  stale:
+    "Nothing reported here in years. Treat the read as a statement about rainfall, not about what is on the ground now.",
+  unknown: "No reports at all, so there is nothing to forecast from.",
+};
+
+/** How long ago, in the units people actually think in. */
+export function describeAge(lastReported: string | null, today = new Date()): string {
+  if (!lastReported) return "never";
+  const days = Math.floor(
+    (Date.parse(`${today.toISOString().slice(0, 10)}T00:00:00Z`) -
+      Date.parse(`${lastReported}T00:00:00Z`)) /
+      86_400_000,
+  );
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 31) return `${days} days ago`;
+  const months = Math.round(days / 30.44);
+  if (months < 24) return `${months} month${months === 1 ? "" : "s"} ago`;
+  return `${Math.round(days / 365.25)} years ago`;
+}
