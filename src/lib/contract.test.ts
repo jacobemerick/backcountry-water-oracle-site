@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ForecastResult } from "./forecast.ts";
+import { hasRead } from "./forecast.ts";
 import { SMALL_N_THRESHOLD, confidenceOf, monthlyFlow, verdictTone } from "./present.ts";
 
 /**
@@ -13,8 +14,12 @@ import { SMALL_N_THRESHOLD, confidenceOf, monthlyFlow, verdictTone } from "./pre
  * exists because `notes` was typed as string[] when the engine actually emits
  * {kind, source, message} objects: everything compiled, the local run happened
  * to have zero notes, and the mistake only surfaced as a prerender crash in
- * production. Re-record the fixtures whenever scripts/sync-engine.sh moves the
- * pinned commit.
+ * production.
+ *
+ * The CSV inputs are committed beside the fixtures. After ./scripts/bump-engine.sh,
+ * run ./scripts/record-fixtures.sh and then this suite: a payload change shows up
+ * as a failing assertion here rather than as a 500 in production. It did exactly
+ * that on the 0.2.0 bump, which is the whole point.
  */
 
 const fixture = (name: string): ForecastResult =>
@@ -53,12 +58,58 @@ test("notes are {kind, source, message} objects, never strings", () => {
   assert.equal(skip.source, "Ancient Tank");
 });
 
-test("a skipped source is absent from sources but reported in notes", () => {
-  // Silence here would read as "no data on that spring" when the truth is
-  // "its reports predate the precipitation record".
-  const names = WITH_NOTES.sources.map((s) => s.name);
-  assert.ok(!names.includes("Ancient Tank"));
+test("a source with no usable reports is present, null, and explained", () => {
+  // Changed by engine 0.2.0. It used to be dropped from sources[] and mentioned
+  // only in notes; now it is carried with n=0 so it can still offer rain
+  // context. Silence either way would read as "no data on that spring" when the
+  // truth is "its reports predate the precipitation record".
+  const ancient = WITH_NOTES.sources.find((s) => s.name === "Ancient Tank");
+  assert.ok(ancient, "a source with no usable reports must still appear");
+  assert.equal(ancient.n, 0);
   assert.ok(WITH_NOTES.notes.some((n) => n.source === "Ancient Tank"));
+
+  // The keys are present and null, never absent — nothing should have to test
+  // for existence before reading them.
+  for (const k of ["verdict", "best", "type", "pct_dry", "mean_flow",
+                   "precip_in", "predicted_flow"] as const) {
+    assert.ok(k in ancient, `${k} must be present even with no read`);
+    assert.equal(ancient[k], null, `${k} must be null with no read`);
+  }
+
+  // And the guard the UI relies on actually rejects it.
+  assert.equal(hasRead(ancient), false);
+});
+
+test("hasRead accepts every source that has a verdict", () => {
+  for (const s of THREE.sources) {
+    assert.ok(hasRead(s), `${s.name} has a verdict and must narrow`);
+  }
+});
+
+test("rain context is present even with no reports at all", () => {
+  // The only reading an unreported coordinate gets, and explicitly not a flow
+  // verdict. Its presence here is what unblocks the rainfall block on the
+  // thin-source page (#12).
+  const ancient = WITH_NOTES.sources.find((s) => s.name === "Ancient Tank")!;
+  const windows = Object.keys(ancient.rain_percentiles);
+  assert.ok(windows.length > 0, "rain_percentiles must be populated with n=0");
+  for (const w of windows) {
+    const p = ancient.rain_percentiles[w];
+    assert.ok(isNum(p.inches) && isNum(p.median_in));
+    assert.ok(p.pct >= 0 && p.pct <= 100, `${w} percentile out of range: ${p.pct}`);
+    assert.ok(p.n_years > 0);
+  }
+  assert.ok(Array.isArray(ancient.neighbors));
+  assert.equal(typeof ancient.neighbors_disagree, "boolean");
+});
+
+test("radar is off on this host, in the recorded payload", () => {
+  // app.py sets RADAR_PROVIDER = None; the fixtures are recorded with
+  // --radar=none to match. If a bump re-enables it, this fails here rather
+  // than as a function timeout in production.
+  for (const result of [THREE, WITH_NOTES]) {
+    for (const s of result.sources) assert.equal(s.radar_check, null, s.name);
+  }
 });
 
 test("every field the UI reads is present and the right type", () => {
@@ -66,6 +117,7 @@ test("every field the UI reads is present and the right type", () => {
 
   for (const s of THREE.sources) {
     assert.equal(typeof s.name, "string");
+    assert.ok(hasRead(s), `${s.name} should have a read in this fixture`);
     for (const k of ["lat", "lon", "n", "pct_dry", "mean_flow", "annual_precip_in",
                      "predicted_flow", "precip_in", "harmonics"] as const) {
       assert.ok(isNum(s[k]), `${s.name}.${k} should be a finite number, got ${s[k]}`);

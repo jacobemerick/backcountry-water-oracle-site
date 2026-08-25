@@ -1,4 +1,5 @@
-import type { SourceForecast } from "./forecast.ts";
+import type { ReadableSource, SourceForecast } from "./forecast.ts";
+import { hasRead } from "./forecast.ts";
 
 /**
  * Presentation helpers — the layer that turns the engine's numbers into
@@ -39,7 +40,8 @@ export const SMALL_N_THRESHOLD = 25;
 export type Confidence = "none" | "weak" | "moderate";
 
 export function confidenceOf(s: SourceForecast): Confidence {
-  if (s.n < MIN_REPORTS_FOR_VERDICT) return "none";
+  // No read at all from the engine is, a fortiori, not enough data.
+  if (!hasRead(s) || s.n < MIN_REPORTS_FOR_VERDICT) return "none";
   if (s.small_n) return "weak"; // engine flags n < SMALL_N_THRESHOLD
   return "moderate";
 }
@@ -98,7 +100,7 @@ export function flowLabel(flow: number): string {
 
 /** Tone for the verdict banner. Dry and unknown are both "don't count on it". */
 export function verdictTone(s: SourceForecast): "dry" | "marginal" | "wet" | "unknown" {
-  if (confidenceOf(s) === "none") return "unknown";
+  if (confidenceOf(s) === "none" || !hasRead(s)) return "unknown";
   if (s.predicted_flow < 0.1) return "dry";
   if (s.predicted_flow < 0.5) return "marginal";
   return "wet";
@@ -109,7 +111,7 @@ export function verdictTone(s: SourceForecast): "dry" | "marginal" | "wet" | "un
  * nothing to someone planning a water carry; "rain over the last 90 days
  * predicts this one well" does.
  */
-export function explainType(s: SourceForecast): string {
+export function explainType(s: ReadableSource): string {
   const w = s.best.days;
   const strength = Math.abs(s.best.r);
 
@@ -133,7 +135,7 @@ export function explainType(s: SourceForecast): string {
 }
 
 /** How much of the headline correlation was borrowed from neighboring sources. */
-export function explainPooling(s: SourceForecast): string | null {
+export function explainPooling(s: ReadableSource): string | null {
   if (s.best.group_n <= 1) return null;
   const pct = Math.round(s.best.borrowed * 100);
   const neighbors = s.best.group_n - 1;

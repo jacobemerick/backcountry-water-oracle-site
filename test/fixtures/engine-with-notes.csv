@@ -1,0 +1,6 @@
+source,lat,lon,date,score,status
+Chilson Spring,34.08587,-111.49097,2025-10-24,1.00,Gallon+ per minute
+Chilson Spring,34.08587,-111.49097,2024-06-30,0.20,Box full no flow
+Chilson Spring,34.08587,-111.49097,2001-05-01,0.40,Pre-record report
+Ancient Tank,34.09000,-111.46000,1998-04-01,0.50,Old report
+Ancient Tank,34.09000,-111.46000,1999-05-01,0.00,Dry

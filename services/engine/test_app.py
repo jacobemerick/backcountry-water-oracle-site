@@ -84,7 +84,12 @@ class ServiceMatchesCli(unittest.TestCase):
     def assert_same(self, csv_text, asof="2026-08-01"):
         status, service = via_service(csv_text, asof=asof)
         self.assertEqual(status, "200 OK")
-        cli = via_cli(csv_text, f"--asof={asof}")
+        # --radar none matches app.py's RADAR_PROVIDER = None. The service is
+        # deliberately configured differently from the CLI's defaults here, so
+        # the CLI is given the same configuration rather than the assertion
+        # being loosened -- the point of this test is that identical input and
+        # identical configuration produce identical output.
+        cli = via_cli(csv_text, f"--asof={asof}", "--radar=none")
 
         # `params.cache` can differ harmlessly; everything else must match.
         for key in ("asof", "notes", "sources"):
@@ -168,6 +173,35 @@ class RequestHandling(unittest.TestCase):
         captured = {}
         b"".join(application(env, lambda s, h: captured.update(status=s)))
         self.assertTrue(captured["status"].startswith("405"))
+
+
+class HostConfiguration(unittest.TestCase):
+    """
+    Settings this host deliberately differs from the engine's defaults on.
+
+    Each one is a decision with a reason, so each gets a test -- otherwise the
+    next engine bump quietly re-enables it and the failure shows up as a
+    timeout in production rather than a red suite here.
+    """
+
+    def test_radar_is_disabled(self):
+        # The MRMS cross-check fetches from IEM per coordinate. Our cache is
+        # /tmp, per-instance and ephemeral, so a cold instance would pay ~20
+        # extra upstream requests to produce a 60-day number and blow the
+        # function timeout. Re-enable when it can read from the shared store.
+        self.assertIsNone(engine.RADAR_PROVIDER)
+
+    def test_radar_check_is_absent_from_the_payload(self):
+        # Not merely configured off -- actually absent from what we serve, so a
+        # future default that ignores RADAR_PROVIDER still fails here.
+        _, result = via_service(CSV_ALL_USABLE, asof="2026-08-01")
+        for source in result["sources"]:
+            self.assertIsNone(source["radar_check"], source["name"])
+
+    def test_cache_dir_is_under_tmp(self):
+        # The bundle is read-only on Vercel; this produced
+        # "[Errno 30] Read-only file system: '/var/task/.cache'" in production.
+        self.assertTrue(str(engine.CACHE_DIR).startswith(tempfile.gettempdir()))
 
 
 if __name__ == "__main__":

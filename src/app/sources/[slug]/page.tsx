@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { guardEngineRun } from "@/lib/rate-limit";
 import { engineRowsForSources, findSourceBySlug, sourcesNear } from "@/lib/db";
-import { EngineError, runForecast } from "@/lib/forecast";
+import { EngineError, hasRead, runForecast } from "@/lib/forecast";
+import type { ReadableSource } from "@/lib/forecast";
 import { MIN_REPORTS_FOR_VERDICT, THRESHOLD_COPY, confidenceOf } from "@/lib/present";
 import { formatDistance, formatLatLon } from "@/lib/coords";
 import { SiteShell } from "@/components/SiteShell";
@@ -17,7 +18,7 @@ import {
   TheRead,
   WhyThisRead,
 } from "@/components/SourceRead";
-import { ThinSourceSheet } from "@/components/ThinSourceSheet";
+import { ReadUnavailable, ThinSourceSheet } from "@/components/ThinSourceSheet";
 import { ReportForm } from "./ReportForm";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export default async function SourcePage({ params }: Props) {
     ? await engineRowsForSources([source.id, ...neighbourIds])
     : rows;
 
-  let forecast = null;
+  let forecast: ReadableSource | null = null;
   let engineError: string | null = null;
   if (rows.length >= MIN_REPORTS_FOR_VERDICT) {
     const guard = await guardEngineRun(await headers());
@@ -61,7 +62,12 @@ export default async function SourcePage({ params }: Props) {
     } else {
       try {
         const result = await runForecast(allRows);
-        forecast = result.sources.find((s) => s.name === source.name) ?? null;
+        // Since engine 0.2.0 a source with no usable reports comes back *in*
+        // sources[] with every verdict-derived field null, rather than being
+        // dropped. Narrow here so the thin-source page handles that case rather
+        // than the sheet rendering a row of nulls.
+        const found = result.sources.find((s) => s.name === source.name);
+        forecast = found && hasRead(found) ? found : null;
       } catch (e) {
         engineError = e instanceof EngineError ? e.message : String(e);
       }
@@ -97,6 +103,12 @@ export default async function SourcePage({ params }: Props) {
    * prose measure rather than the wide sheet, because a collar full of Record
    * and Provenance would imply there is a reading to annotate.
    */
+  // Three states, not two. "No read" has two completely different causes and
+  // they must not share a page: too little record is a fact about the corpus,
+  // an engine failure is a fact about this server. Saying the first when the
+  // second is true tells someone their reports were not enough when they were.
+  const enoughReports = rows.length >= MIN_REPORTS_FOR_VERDICT;
+
   if (!forecast) {
     return (
       <SiteShell context={<span className="value">{formatLatLon(source)}</span>}>
@@ -115,13 +127,19 @@ export default async function SourcePage({ params }: Props) {
           </p>
         </div>
 
-        <ThinSourceSheet
-          reportCount={rows.length}
-          neighbours={neighbourList}
-          engineError={engineError}
-        >
-          {reportForm}
-        </ThinSourceSheet>
+        {enoughReports ? (
+          <ReadUnavailable reportCount={rows.length} engineError={engineError}>
+            {reportForm}
+          </ReadUnavailable>
+        ) : (
+          <ThinSourceSheet
+            reportCount={rows.length}
+            neighbours={neighbourList}
+            engineError={engineError}
+          >
+            {reportForm}
+          </ThinSourceSheet>
+        )}
 
         {rows.length > 0 && (
           <section className="mt-10">

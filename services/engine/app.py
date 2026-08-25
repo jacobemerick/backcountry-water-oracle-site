@@ -50,6 +50,22 @@ os.environ.setdefault("WATER_ORACLE_CACHE", os.path.join(tempfile.gettempdir(), 
 
 import backcountry_water_oracle as engine  # noqa: E402  (must follow the env default)
 
+# The radar cross-check is off here, and only here.
+#
+# 0.2.0 added an MRMS cross-check that runs by default and is genuinely useful:
+# recent radar rain beside the model's own figure, reported next to the verdict
+# and never inside it. It is also the wrong shape for this host. Our cache is
+# /tmp -- per-instance and ephemeral -- so a cold instance pays ~20 extra IEM
+# requests per coordinate, year-chunked with a politeness delay, to produce a
+# 60-day number. That is a function timeout on the request path, not a slow
+# page. Measured locally: the engine test suite went from ~3s to ~72s with it
+# enabled.
+#
+# RADAR_PROVIDER is the seam the engine exposes for exactly this. When the
+# shared Postgres-backed store lands (site #8) this should point at it rather
+# than be None, which is the same trajectory as PRECIP_PROVIDER.
+engine.RADAR_PROVIDER = None
+
 # Generous: a source with 5000 reports is ~250KB of CSV, and a supplied precip
 # series is ~7000 floats per coordinate.
 MAX_BODY = 32 * 1024 * 1024

@@ -134,3 +134,60 @@ export function ThinSourceSheet({
     </div>
   );
 }
+
+/**
+ * The engine could not produce a read, on a source that has plenty of record.
+ *
+ * A third state, and it has to be its own: a timeout or a rate-limit is a fact
+ * about this server, not about the water or the corpus. Folding it into the
+ * thin-source page produced a genuine contradiction — "15 reports, a
+ * correlation needs at least 10, so no read is issued" directly above "this
+ * source has enough reports for a read" — which blames the record for the
+ * server's problem and tells someone their reports were not enough when they
+ * were.
+ *
+ * Deliberately not an "Insufficient record" stamp and not overprint. Nothing
+ * here is a statement about the sheet.
+ */
+export function ReadUnavailable({
+  reportCount,
+  engineError,
+  children,
+}: {
+  reportCount: number;
+  engineError?: string | null;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-8">
+      <div className="rounded-lg border-l-2 border-warn bg-warn-soft px-5 py-6">
+        <p className="collar-label text-warn">Read unavailable</p>
+        <p className="mt-2 text-2xl font-semibold">Could not compute a read just now</p>
+        <p className="mt-3 max-w-xl leading-relaxed">
+          This is a problem with this server, not with the water and not with the record. There
+          {reportCount === 1 ? " is " : " are "}
+          <span className="value">{reportCount}</span> report
+          {reportCount === 1 ? "" : "s"} on file here and the read normally succeeds — try again in
+          a minute.
+        </p>
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
+          Treat this as no information either way. It is not a quiet way of saying the source is
+          dry.
+        </p>
+        {engineError && (
+          <pre className="mt-4 overflow-x-auto rounded border border-border bg-surface p-3 text-xs text-muted">
+            {engineError}
+          </pre>
+        )}
+      </div>
+
+      <section>
+        <p className="collar-label text-accent">While you are here</p>
+        <p className="mt-3 max-w-2xl leading-relaxed text-muted">
+          If you have seen this source recently, the report is worth more than the read.
+        </p>
+        <div className="mt-5">{children}</div>
+      </section>
+    </div>
+  );
+}
