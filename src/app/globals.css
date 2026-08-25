@@ -43,6 +43,16 @@
   }
 }
 
+/* The four faces, with their fallbacks, declared once. Both the Tailwind theme
+   tokens below and the role classes further down read from these, so a stack is
+   never written twice. */
+:root {
+  --stack-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --stack-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --stack-collar: var(--font-collar-face), "Arial Narrow", ui-sans-serif, sans-serif;
+  --stack-hydro: var(--font-hydro-face), Georgia, ui-serif, serif;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
@@ -56,13 +66,90 @@
   --color-warn-soft: var(--warn-soft);
   --color-contour: var(--contour);
   --color-overprint: var(--overprint);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--stack-sans);
+  --font-mono: var(--stack-mono);
+  --font-collar: var(--stack-collar);
+  --font-hydro: var(--stack-hydro);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--stack-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------------
+   The Quad type roles.
+
+   Which face does which job is the whole design, and it went wrong twice during
+   the mockups, so the rules live here as classes rather than as a convention
+   nobody reads. Use these; don't re-specify a face inline.
+   --------------------------------------------------------------------------- */
+
+/* Small administrative labels only: block headings, collar keys, stamps.
+   Never a headline, never a value, never a button.
+
+   Two hard limits, both learned the expensive way. Tracking is .13em, not the
+   .22em of the first mockup — over-tracked caps destroy word shape, which is
+   what people actually read by. And nothing condensed goes below 10.5px, which
+   is enforced rather than asked for: callers set --collar-size, and the max()
+   makes the floor unreachable. A condensed face at 9px is decoration shaped
+   like text. */
+.collar-label {
+  font-family: var(--stack-collar);
+  font-weight: 600;
+  font-size: max(0.65625rem, var(--collar-size, 0.6875rem));
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+/* Page headlines. Plex Sans 700 rather than the mockups' Archivo — see the note
+   in layout.tsx. Caps at display size need no help from tracking. */
+.headline {
+  font-family: var(--stack-sans);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+/* Every number on the site: counts, percentages, r, coordinates, dates.
+   tabular-nums so columns of them line up and a changing value doesn't reflow
+   the text around it. */
+.value {
+  font-family: var(--stack-mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hydrography: source names, everywhere they appear, always in the map blue.
+   .hydro-display is a source name at title size; .hydro-inline is one sitting in
+   a list or a sentence. The smaller of the two carries more weight, because it
+   has less area to make its case with. */
+.hydro-display,
+.hydro-inline {
+  font-family: var(--stack-hydro);
+  font-style: italic;
+  color: var(--accent);
+}
+
+.hydro-display {
+  font-weight: 500;
+}
+
+.hydro-inline {
+  font-weight: 600;
+}
+
+/* Dark asks for exactly one more step of weight and nothing else. That the step
+   is this small is the payoff for picking a face whose construction suits both
+   grounds — the previous didone needed far more than a nudge, and still lost. */
+@media (prefers-color-scheme: dark) {
+  .hydro-display {
+    font-weight: 600;
+  }
+
+  .hydro-inline {
+    font-weight: 700;
+  }
 }
