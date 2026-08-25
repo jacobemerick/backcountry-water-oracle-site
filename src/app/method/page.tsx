@@ -4,6 +4,9 @@ import { SiteShell } from "@/components/SiteShell";
 import { Section } from "@/components/Section";
 import { RUBRIC, RUBRIC_GUIDANCE } from "@/lib/rubric";
 
+const ENGINE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle";
+const SITE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle-site";
+
 export const metadata: Metadata = {
   title: "Method",
   description:
@@ -138,6 +141,33 @@ export default function MethodPage() {
           aid built from historical correlation, not a promise that anything is wet. Never carry
           less because of what you read here.
         </p>
+      </Section>
+
+      <Section id="status" eyebrow="Status" title="What is here, and what is coming">
+        <p className="max-w-2xl leading-relaxed text-muted">
+          The forecasting engine is built, open source, and has been used before real trips. This
+          site is the front door for it, and it is being assembled now.
+        </p>
+        <p className="mt-4 max-w-2xl leading-relaxed text-muted">
+          The honest constraint: the model is free, but the <em>reports</em> are the hard part.
+          Every dated observation someone contributes sharpens the source it belongs to and the
+          ones around it, because nearby sources lend each other statistical strength. If you keep
+          trip notes on water, you already have the valuable thing.
+        </p>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <a
+            href={ENGINE_REPO}
+            className="rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-medium transition-colors hover:border-accent hover:text-accent"
+          >
+            The engine on GitHub
+          </a>
+          <a
+            href={`${SITE_REPO}/issues/20`}
+            className="rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-medium transition-colors hover:border-accent hover:text-accent"
+          >
+            Roadmap
+          </a>
+        </div>
       </Section>
 
       <Section eyebrow="Next" title="Go look something up">
