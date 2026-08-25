@@ -27,7 +27,13 @@ read, which is useful but is explicitly **not** a flow verdict.
 
 ## Architecture
 
-Next.js (App Router) on Vercel · Neon Postgres (+PostGIS) · MapLibre GL.
+Next.js (App Router) on Vercel · Neon Postgres (+PostGIS) · Leaflet.
+
+The basemap is USGS's National Map — public domain, no API key, and, the reason
+it beats a generic street basemap here, *topographic*. Someone placing a spring
+is reading terrain: drainages, contours, benches. A road map shows them almost
+nothing useful. Imagery is offered alongside, because a seep is often easier to
+spot as a green smudge in a dry canyon than as a contour.
 
 The Python engine stays the source of truth and is invoked from a serverless
 function — `forecast.py` is vendored, **not** ported to TypeScript. It's only
