@@ -78,6 +78,36 @@ this job's whole failure mode, so the absence of recent rows in
 `sheet_fetch_attempts` is the alarm, and a partial failure returns a non-2xx so
 it shows up red rather than silently green.
 
+## Placing an archived report on the map
+
+An archived water report says *where on a trail* a source is, not what its
+coordinates are — and the engine needs the coordinate, because every correlation
+is against the rain that fell on that exact spot. `trail_waypoints` is the join
+between the two, loaded from published trail geometry by
+`npm run db:trail-reference`.
+
+The two trails need different joins, which is a fact about the data rather than a
+design choice:
+
+- **PCT** rows carry a mile, and the PCTA publish tenth-mile markers, so a mile
+  resolves by interpolating between the two nearest. 26,600 markers.
+- **AZT** rows carry a passage and a mile, but the ATA also publish the water
+  sources themselves with coordinates — 304 of them, keyed by an `ATA_Num` that
+  encodes passage and tenth-mile (`01-079` is passage 1, mile 7.9). Their mileage
+  and the water-report PDFs' mileage disagree by up to a mile, having been
+  measured against different centerline vintages, so AZT joins on **name**, with
+  passage only as a tiebreak.
+
+Both refuse rather than guess. A mile outside the marker set, or inside a gap
+left by a reroute, gets no coordinate rather than an extrapolated one; a name
+matching two different springs returns nothing rather than picking the nearer.
+A missing coordinate costs one report, a wrong one silently correlates a source
+against weather from somewhere else.
+
+Licences differ and are recorded per row. PCTA publish under CC BY 4.0. The ATA
+layer is public but states no licence, which puts it on the same footing as their
+water-report PDFs.
+
 **Attribution.** The PCT Water Report is volunteer work with a documented
 lineage — Halfmile originally, stewarded now by Druid and others. It carries no
 licence grant, only a warranty disclaimer. Mirroring for preservation is
