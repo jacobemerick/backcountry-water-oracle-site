@@ -1,0 +1,25 @@
+/* Leaflet builds its own marker DOM, so these are handed to it by class name
+   rather than written as props. Doing it in CSS is also the only way the marks
+   follow `prefers-color-scheme` — the map is built once on mount, and colors
+   baked in at that moment would be stuck on whichever theme happened to be
+   active. CSS declarations beat SVG presentation attributes, so these win over
+   Leaflet's own stroke/fill defaults without !important. */
+
+.sourceMark {
+  stroke: var(--accent);
+  fill: var(--accent);
+  fill-opacity: 0.55;
+}
+
+/* The dropped pin. Warn, not accent, so it reads as "the mark you are making"
+   against the blue of sources that already exist. The ring is the surface color
+   and the hairline outside it keeps the pin legible on busy topo tiles, where a
+   plain colored dot disappears into contour hatching. */
+.pin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--warn);
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 45%, transparent);
+}

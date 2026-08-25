@@ -1,33 +1,45 @@
 @import "tailwindcss";
 
-/* Palette: high-desert sandstone + water. Light is warm paper, dark is canyon
-   shade. Both tuned for long-form reading — this site's job is to explain a
-   statistical read honestly, so legibility beats contrast drama. */
+/* Palette: the 7.5-minute quad. Light is the printed sheet — warm paper, contour
+   brown, map blue, and water lettered in blue. Both grounds are tuned for long-form
+   reading, because this site's job is to explain a statistical read honestly, and
+   legibility beats contrast drama. */
 :root {
-  --background: #faf8f4;
-  --surface: #ffffff;
-  --surface-sunk: #f2eee6;
-  --foreground: #1c2024;
-  --muted: #5f6672;
-  --border: #e3ddd2;
-  --accent: #0e7490;
-  --accent-soft: #e0f2f7;
-  --warn: #8a4f0a;
-  --warn-soft: #fdf3e3;
+  --background: #f5f0e2;
+  --surface: #fcf9f1;
+  --surface-sunk: #ebe4d1;
+  --foreground: #292216;
+  --muted: #6d604a;
+  --border: #d4c9af;
+  --accent: #2d6ca6;
+  --accent-soft: #dfeaf5;
+  --warn: #9c6a34;
+  --warn-soft: #f0e5d0;
+  /* Contour draws the terrain band. Overprint is the purple a quad uses for
+     revision marks: here it flags things that are *about* the sheet rather than
+     about the water — pooling notes, "insufficient record" stamps. */
+  --contour: #a3703f;
+  --overprint: #7d5ba6;
 }
 
+/* The sheet under a headlamp. Not an inversion of light — re-picked. The ground
+   sits off black and slightly desaturated, because a very dark, very warm field
+   makes light type halate, and halation eats thin strokes first. Muted ink is
+   deliberately high: it carries real values, not decoration. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0e1116;
-    --surface: #161b22;
-    --surface-sunk: #11151b;
-    --foreground: #e8eaed;
-    --muted: #99a1ae;
-    --border: #262d38;
-    --accent: #38bdf8;
-    --accent-soft: #10222d;
-    --warn: #e0a458;
-    --warn-soft: #241a0e;
+    --background: #191510;
+    --surface: #231e16;
+    --surface-sunk: #120f0a;
+    --foreground: #f0e8d8;
+    --muted: #bcae94;
+    --border: #413524;
+    --accent: #84bdea;
+    --accent-soft: #12222e;
+    --warn: #d9a463;
+    --warn-soft: #2a1f0e;
+    --contour: #c69158;
+    --overprint: #b79bd4;
   }
 }
 
@@ -42,6 +54,8 @@
   --color-accent-soft: var(--accent-soft);
   --color-warn: var(--warn);
   --color-warn-soft: var(--warn-soft);
+  --color-contour: var(--contour);
+  --color-overprint: var(--overprint);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
