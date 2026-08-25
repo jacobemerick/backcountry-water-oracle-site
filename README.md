@@ -56,6 +56,15 @@ the Wayback Machine has never captured these sheets, and a check of the CDX
 index for both the legacy and current export URLs returns zero snapshots. Every
 season nobody mirrors them is gone permanently.
 
+The Arizona Trail is in there too, recovered rather than mirrored. The ATA's
+live water report now redirects into a paid app, but the ATA published its own
+`AZT_WaterSources.pdf` for years, and unlike a Google Sheet an ordinary web page
+*is* archived. Five distinct editions survive in the Wayback Machine,
+2016 to 2018, holding 578 distinct (location, date) observations across all 43
+passages with report dates reaching back to 2009. Those are captured here so the
+archive does not depend on the Internet Archive staying reachable. A fixed
+capture cannot change, so once held it is never fetched again.
+
 Raw bytes are stored immutably and deduplicated by content hash, so the sheets'
 daily in-season edits cost one row each and their long off-season silence costs
 nothing. Snapshots are keyed on the Google document id rather than a name,
