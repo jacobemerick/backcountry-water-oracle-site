@@ -30,6 +30,23 @@ type Nearby = {
 /** Below this, the picker stops offering to create and insists it is the same source. */
 const SAME_SOURCE_KM = 0.05;
 
+/**
+ * The radius the engine actually pools over — `sourcesNear(lat, lon, 25)` in
+ * lib/db.ts, the PostGIS ST_DWithin query whose results lend a thin source
+ * strength from neighbours that respond to rain the same way.
+ *
+ * Not a decorative number, which is the whole reason it is worth drawing.
+ */
+const POOLING_RADIUS_KM = 25;
+
+/**
+ * The duplicate check is a different question at a different scale: "is this
+ * the same spring", not "what would this pool with". Wide enough to catch one
+ * spring pinned from two different trail junctions, narrow enough that the list
+ * stays readable.
+ */
+const DUPLICATE_RADIUS_KM = 2;
+
 export function SourcePicker({
   id,
   sources,
@@ -45,7 +62,7 @@ export function SourcePicker({
   const [text, setText] = useState(initialPoint ? formatLatLon(initialPoint) : "");
   const [point, setPoint] = useState<LatLon | null>(initialPoint);
   const [parseError, setParseError] = useState<string | null>(null);
-  const [nearby, setNearby] = useState<Nearby[] | null>(null);
+  const [pooled, setPooled] = useState<Nearby[] | null>(null);
   const [checking, setChecking] = useState(false);
 
   const [name, setName] = useState("");
@@ -67,7 +84,7 @@ export function SourcePicker({
     setPoint(next);
     setText(formatLatLon(next));
     setParseError(null);
-    setNearby(null);
+    setPooled(null);
   }, []);
 
   function onTextChange(value: string) {
@@ -76,11 +93,11 @@ export function SourcePicker({
     if (!value.trim()) {
       setPoint(null);
       setParseError(null);
-      setNearby(null);
+      setPooled(null);
       return;
     }
     const parsed = parseLatLon(value);
-    setNearby(null);
+    setPooled(null);
     if (parsed.ok) {
       setPoint(parsed.value);
       setParseError(null);
@@ -101,13 +118,13 @@ export function SourcePicker({
       setChecking(true);
       try {
         const res = await fetch(
-          `/api/sources/nearby?lat=${point.lat}&lon=${point.lon}&radius_km=2`,
+          `/api/sources/nearby?lat=${point.lat}&lon=${point.lon}&radius_km=${POOLING_RADIUS_KM}`,
           { signal: controller.signal },
         );
         const data = await res.json();
-        setNearby(res.ok ? (data.sources ?? []) : []);
+        setPooled(res.ok ? (data.sources ?? []) : []);
       } catch {
-        if (!controller.signal.aborted) setNearby([]);
+        if (!controller.signal.aborted) setPooled([]);
       } finally {
         if (!controller.signal.aborted) setChecking(false);
       }
@@ -120,7 +137,11 @@ export function SourcePicker({
     };
   }, [point]);
 
-  const certainDuplicate = nearby?.find((s) => s.distance_km <= SAME_SOURCE_KM) ?? null;
+  // One request answers both questions. The duplicate check is the near slice
+  // of the pooling set, rather than a second round trip at a second radius.
+  const nearby = pooled?.filter((s) => s.distance_km <= DUPLICATE_RADIUS_KM) ?? null;
+  const pooledIds = useMemo(() => (pooled ?? []).map((s) => s.id), [pooled]);
+  const certainDuplicate = pooled?.find((s) => s.distance_km <= SAME_SOURCE_KM) ?? null;
   const canSubmit = Boolean(point) && name.trim().length > 0 && !certainDuplicate && !submitting;
 
   async function onSubmit(event: React.FormEvent) {
@@ -150,7 +171,14 @@ export function SourcePicker({
 
   return (
     <div id={id} className="scroll-mt-4 space-y-8">
-      <SourceMap sources={sources} selected={point} onSelect={selectPoint} center={center} />
+      <SourceMap
+        sources={sources}
+        selected={point}
+        onSelect={selectPoint}
+        center={center}
+        poolingRadiusKm={POOLING_RADIUS_KM}
+        pooledIds={pooledIds}
+      />
 
       <div>
         <label htmlFor="coords" className="block text-sm font-medium">
@@ -182,7 +210,7 @@ export function SourcePicker({
               ? "Checking for existing sources…"
               : nearby && nearby.length > 0
                 ? `${nearby.length} source${nearby.length === 1 ? "" : "s"} already recorded nearby`
-                : "Nothing recorded within 2 miles"}
+                : `Nothing recorded within ${DUPLICATE_RADIUS_KM} km`}
           </h2>
 
           {nearby && nearby.length > 0 && (
@@ -209,6 +237,43 @@ export function SourcePicker({
                 ))}
               </ul>
             </>
+          )}
+
+          {/*
+            What the ring means. Pooling is the most distinctive thing this
+            engine does and it was, until now, invisible in the UI — so it is
+            worth saying plainly what it will and will not do, because "borrows
+            strength from neighbours" is very easy to hear as "gets a forecast
+            for free".
+          */}
+          {pooled && (
+            <div className="mt-4 rounded-lg border-l-2 border-overprint bg-surface p-4">
+              <p className="collar-label text-overprint">
+                Pooling · {POOLING_RADIUS_KM} km
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                {pooled.length > 0 ? (
+                  <>
+                    A source here would pool with the{" "}
+                    <span className="value text-foreground">{pooled.length}</span> source
+                    {pooled.length === 1 ? "" : "s"} inside this ring. Where they respond to rain
+                    the same way, they lend it statistical strength, which is how a source with a
+                    short record can say anything at all.
+                  </>
+                ) : (
+                  <>
+                    Nothing else is recorded within <span className="value">{POOLING_RADIUS_KM} km</span>,
+                    so a source here would have no neighbours to borrow from and would rest
+                    entirely on its own reports.
+                  </>
+                )}
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                What it will not do is produce a read. Pooling sharpens a correlation; it cannot
+                create one. A new source still needs its own reports before this site will issue a
+                verdict on it.
+              </p>
+            </div>
           )}
 
           {certainDuplicate && (
