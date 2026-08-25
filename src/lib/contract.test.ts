@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ForecastResult } from "./forecast.ts";
-import { byReliability, confidenceOf, monthlyFlow, verdictTone } from "./present.ts";
+import { confidenceOf, monthlyFlow, verdictTone } from "./present.ts";
 
 /**
  * Guards the boundary with the Python engine.
@@ -159,14 +159,6 @@ test("mean_flow_by_month is keyed by month number and may have gaps", () => {
 });
 
 test("presentation logic holds against real data", () => {
-  const ordered = byReliability(THREE.sources);
-  assert.deepEqual(
-    ordered.map((s) => s.pct_dry),
-    [...ordered.map((s) => s.pct_dry)].sort((a, b) => a - b),
-    "most reliable first",
-  );
-  assert.ok(ordered[0].name.startsWith("Chilson"), "Chilson is driest-proof at 3%");
-
   const castersen = THREE.sources.find((s) => s.name === "Castersen Seep")!;
   assert.equal(castersen.n, 15);
   assert.equal(confidenceOf(castersen), "weak", "n=15 is above the floor but flagged");

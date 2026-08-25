@@ -16,7 +16,7 @@ import {
   SourceRecord,
   TheRead,
   WhyThisRead,
-} from "@/components/SourceCard";
+} from "@/components/SourceRead";
 import { ReportForm } from "./ReportForm";
 
 export const dynamic = "force-dynamic";
