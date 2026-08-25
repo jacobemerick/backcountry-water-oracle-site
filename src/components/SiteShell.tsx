@@ -11,17 +11,17 @@ const SITE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle-site
  * comparison the data cannot support, since most sources sit under the verdict
  * floor. It is being retired outright.
  *
- * These three targets are the reason the shell exists. Home becomes the lookup
- * and the essay moves to /method in the tickets right after this one, and when
- * they land it is three hrefs in one file rather than a hunt through four pages
- * that had each drifted.
+ * These three targets are the reason the shell exists. /method now points at a
+ * real route; home becomes the lookup in the ticket after this one, and when it
+ * does it is one href in one file rather than a hunt through four pages that
+ * had each drifted.
  */
 const NAV = [
   { href: "/sources", label: "Look up a source" },
   { href: "/sources#add", label: "Add what you saw" },
 ] as const;
 
-const METHOD_HREF = "/#method";
+const METHOD_HREF = "/method";
 
 /**
  * The collar of the sheet.
