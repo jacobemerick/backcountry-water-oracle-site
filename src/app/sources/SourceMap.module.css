@@ -23,3 +23,23 @@
   border: 3px solid var(--surface);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 45%, transparent);
 }
+
+/* The pooling ring: the real 25 km radius the engine borrows neighbours from.
+   Overprint purple and dashed, because on a quad that ink is reserved for
+   annotation *about the sheet* rather than about the terrain — and a pooling
+   radius is a statement about how a number would be computed, not about where
+   the water is. */
+.poolingRing {
+  stroke: var(--overprint);
+  stroke-dasharray: 6 4;
+  fill: var(--overprint);
+  fill-opacity: 0.06;
+}
+
+/* A source the new pin would actually pool with. Same overprint, filled solid,
+   so the ring and the marks it captures read as one annotation. */
+.pooledMark {
+  stroke: var(--overprint);
+  fill: var(--overprint);
+  fill-opacity: 0.85;
+}
