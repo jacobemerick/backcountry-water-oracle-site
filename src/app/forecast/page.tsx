@@ -13,7 +13,7 @@ import {
   signed,
 } from "@/lib/present";
 import { SiteShell } from "@/components/SiteShell";
-import { SourceCard } from "./SourceCard";
+import { SourceCard } from "@/components/SourceCard";
 
 export const metadata: Metadata = {
   title: "Forecast",
