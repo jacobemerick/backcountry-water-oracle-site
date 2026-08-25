@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { headers } from "next/headers";
 import { guardEngineRun } from "@/lib/rate-limit";
 import { engineRowsForSources, listSourcesWithCounts } from "@/lib/db";
@@ -13,6 +12,7 @@ import {
   freshnessOf,
   signed,
 } from "@/lib/present";
+import { SiteShell } from "@/components/SiteShell";
 import { SourceCard } from "./SourceCard";
 
 export const metadata: Metadata = {
@@ -138,25 +138,12 @@ function SummaryTable({
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mx-auto w-full max-w-3xl px-5 sm:px-8">
-      <header className="flex flex-wrap items-center justify-between gap-3 py-6">
-        <Link href="/" className="font-mono text-sm font-medium tracking-tight hover:text-accent">
-          <span aria-hidden="true">◇</span> Backcountry Water Oracle
-        </Link>
-      </header>
-      <main className="pb-16">{children}</main>
-    </div>
-  );
-}
-
 export default async function ForecastPage() {
   const result = await load();
 
   if (result.kind === "empty") {
     return (
-      <Shell>
+      <SiteShell>
         <h1 className="py-10 text-3xl font-semibold tracking-tight">No sources yet</h1>
         <p className="max-w-xl leading-relaxed text-muted">
           The database has no water sources with reports. Seed the worked example with{" "}
@@ -165,13 +152,13 @@ export default async function ForecastPage() {
           </code>
           .
         </p>
-      </Shell>
+      </SiteShell>
     );
   }
 
   if (result.kind === "throttled") {
     return (
-      <Shell>
+      <SiteShell>
         <h1 className="py-10 text-3xl font-semibold tracking-tight">One moment</h1>
         <p className="max-w-xl leading-relaxed text-muted">
           {result.scope === "global"
@@ -184,13 +171,13 @@ export default async function ForecastPage() {
           Try again in about {result.retryAfterSeconds} second
           {result.retryAfterSeconds === 1 ? "" : "s"}.
         </p>
-      </Shell>
+      </SiteShell>
     );
   }
 
   if (result.kind === "error") {
     return (
-      <Shell>
+      <SiteShell>
         <h1 className="py-10 text-3xl font-semibold tracking-tight">Forecast unavailable</h1>
         <p className="max-w-xl leading-relaxed text-muted">
           The forecast engine could not be reached, so there is nothing to show. Rather than render
@@ -201,7 +188,7 @@ export default async function ForecastPage() {
           {result.message}
           {result.detail ? `\n\n${result.detail}` : ""}
         </pre>
-      </Shell>
+      </SiteShell>
     );
   }
 
@@ -209,7 +196,7 @@ export default async function ForecastPage() {
   const ordered = byReliability(data.sources);
 
   return (
-    <Shell>
+    <SiteShell>
       <div className="py-10">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Current read</h1>
         <p className="mt-3 max-w-2xl leading-relaxed text-muted">
@@ -263,6 +250,6 @@ export default async function ForecastPage() {
           <SourceCard key={s.name} source={s} lastReported={result.lastReported[s.name] ?? null} />
         ))}
       </div>
-    </Shell>
+    </SiteShell>
   );
 }
