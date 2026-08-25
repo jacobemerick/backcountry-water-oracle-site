@@ -44,6 +44,37 @@ empirical-Bayes shrinkage estimator will drift.
 Convenient consequence: the `sources` + `reports` join *is* the engine's CSV
 contract (`source,lat,lon,date,score,status`), so there's no translation layer.
 
+## What is archived, and why
+
+A scheduled job mirrors the public water-report sheets to Postgres, weekly.
+This is **preservation only** — nothing it captures is parsed into `sources` or
+`reports`.
+
+The PCT Water Report keeps roughly twelve months of updates and drops the rest,
+so about 1,500 dated observations age out every year. There is no safety net:
+the Wayback Machine has never captured these sheets, and a check of the CDX
+index for both the legacy and current export URLs returns zero snapshots. Every
+season nobody mirrors them is gone permanently.
+
+Raw bytes are stored immutably and deduplicated by content hash, so the sheets'
+daily in-season edits cost one row each and their long off-season silence costs
+nothing. Snapshots are keyed on the Google document id rather than a name,
+because the labels are the part that drifts — three of the seven were misfiled
+in the spec this was built from. The title and the stewards' own
+`Updated … by <steward>` line are read from each fetch, so a snapshot's label
+always describes the bytes beside it.
+
+Every attempt is recorded whether or not it succeeded. A silent dead cron is
+this job's whole failure mode, so the absence of recent rows in
+`sheet_fetch_attempts` is the alarm, and a partial failure returns a non-2xx so
+it shows up red rather than silently green.
+
+**Attribution.** The PCT Water Report is volunteer work with a documented
+lineage — Halfmile originally, stewarded now by Druid and others. It carries no
+licence grant, only a warranty disclaimer. Mirroring for preservation is
+defensible; anything public-facing needs a permission conversation first, and
+the stewards get credited by name wherever this data eventually surfaces.
+
 ## Development
 
 ```bash

@@ -18,5 +18,18 @@
       "entrypoint": "app:application"
     }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": { "service": "web" } }]
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/archive-sheets",
+      "schedule": "15 9 * * 1"
+    }
+  ]
 }
