@@ -19,10 +19,10 @@ import {
  * The pieces of a source's read, exported individually.
  *
  * The answer page lays these out as a quad sheet: the read in the body, and
- * Record / Pooling / Provenance in a collar down the right margin. `/forecast`
- * still stacks all of them into one card. Splitting them here rather than
- * duplicating markup is what lets one layout be marginal and the other linear
- * without either growing its own copy of the honest-refusal logic.
+ * Record / Pooling / Provenance in a collar down the right margin. They were
+ * split apart so that page and `/forecast`'s linear card could share one
+ * implementation; `/forecast` has since been retired, and the split earned its
+ * keep a second time by making that a deletion rather than an untangling.
  */
 
 const TONE: Record<string, string> = {
@@ -48,7 +48,7 @@ export function BlockLabel({ children }: { children: React.ReactNode }) {
 }
 
 /** Twelve-month seasonality. Bars are relative to the source's own maximum. */
-export function SeasonBars({ source }: { source: SourceForecast }) {
+function SeasonBars({ source }: { source: SourceForecast }) {
   const months = monthlyFlow(source);
   const max = Math.max(...months.map((m) => m.flow ?? 0), 0.01);
 
@@ -100,7 +100,7 @@ export function SeasonBars({ source }: { source: SourceForecast }) {
  * ago is both wrong and discouraging, and the whole point of collecting
  * reports is that people keep sending them.
  */
-export function ExcludedReports({ source }: { source: SourceForecast }) {
+function ExcludedReports({ source }: { source: SourceForecast }) {
   const { total, excluded_before_precip: before, excluded_after_precip: after } = source.reports;
   const [recordStart, recordEnd] = source.reports.precip_span;
 
@@ -382,40 +382,5 @@ export function WhyThisRead({ source }: { source: SourceForecast }) {
 
       <SeasonBars source={source} />
     </div>
-  );
-}
-
-/**
- * The linear card: every piece stacked. Used by `/forecast`, which shows many
- * sources at once and has no margin to hang a collar in.
- */
-export function SourceCard({
-  source,
-  lastReported = null,
-}: {
-  source: SourceForecast;
-  /** From the database — the engine has no idea when it was last visited. */
-  lastReported?: string | null;
-}) {
-  return (
-    <article className="overflow-hidden rounded-lg border border-border bg-surface">
-      <header className="border-b border-border px-5 py-4 sm:px-6">
-        <h3 className="hydro-inline text-lg">{source.name}</h3>
-        <p className="value mt-1 text-xs text-muted">
-          {source.lat.toFixed(5)}, {source.lon.toFixed(5)} · ~{source.annual_precip_in.toFixed(0)}
-          &Prime;/yr
-        </p>
-        <div className="mt-2">
-          <FreshnessTag lastReported={lastReported} />
-        </div>
-      </header>
-
-      <div className="space-y-6 px-5 py-5 sm:px-6">
-        <TheRead source={source} lastReported={lastReported} />
-        <SourceRecord source={source} />
-        <SourcePooling source={source} />
-        <WhyThisRead source={source} />
-      </div>
-    </article>
   );
 }

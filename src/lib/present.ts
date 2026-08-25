@@ -110,11 +110,6 @@ export function monthlyFlow(s: SourceForecast): { month: string; flow: number | 
   });
 }
 
-/** Most reliable first — the engine's own summary-table ordering. */
-export function byReliability(sources: SourceForecast[]): SourceForecast[] {
-  return [...sources].sort((a, b) => a.pct_dry - b.pct_dry);
-}
-
 export const signed = (n: number, digits = 2) => `${n >= 0 ? "+" : ""}${n.toFixed(digits)}`;
 
 /**
