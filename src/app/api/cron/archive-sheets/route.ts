@@ -1,13 +1,12 @@
 import { createHash } from "node:crypto";
 import { insertSnapshot, latestSnapshotHash, recordFetchAttempt } from "@/lib/db";
 import {
-  WATER_SHEETS,
+  ARCHIVE_TARGETS,
   countDatedEntries,
   isNewSnapshot,
   parseProvenance,
-  sheetCsvUrl,
-  type WaterSheet,
-} from "@/lib/water-sheets";
+  type ArchiveTarget,
+} from "@/lib/water-archive";
 
 /**
  * Mirror the public water-report sheets.
@@ -29,13 +28,35 @@ export const maxDuration = 300;
 /** Sequential, with a pause between. We are a guest on someone else's volunteer
     infrastructure, and nothing here is urgent enough to fetch in parallel. */
 const PAUSE_MS = 750;
-const FETCH_TIMEOUT_MS = 30_000;
+
+/**
+ * Google answers a sheet export in a second or two. The Internet Archive is
+ * routinely much slower — it is reconstructing a decade-old capture from cold
+ * storage — and 30s was not enough: two of the five AZT PDFs timed out on the
+ * first real run while the same fetches succeeded by hand at 150s.
+ */
+const FETCH_TIMEOUT_MS = { csv: 30_000, pdf: 120_000 } as const;
+
+/**
+ * Stop starting new fetches with this much of the function budget left.
+ *
+ * Being killed mid-run is the one way this job could lose an attempt without
+ * recording it, and a truncated run is invisible where a deferred one is not.
+ * Deferral is cheap here: every remaining target is either immutable, and will
+ * simply be picked up next run, or a sheet that is re-fetched weekly anyway.
+ */
+const DEADLINE_MARGIN_MS = 45_000;
+const RUN_BUDGET_MS = 300_000 - DEADLINE_MARGIN_MS;
 
 type SheetResult = {
   slug: string;
   sheetId: string;
   ok: boolean;
   unchanged?: boolean;
+  /** Immutable and already held — not fetched at all. */
+  skipped?: boolean;
+  /** Not attempted this run: the function budget ran short. */
+  deferred?: boolean;
   bytes?: number;
   datedEntries?: number;
   title?: string | null;
@@ -58,19 +79,29 @@ function authorized(request: Request): boolean {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-async function archiveSheet(sheet: WaterSheet): Promise<SheetResult> {
+async function archiveSheet(sheet: ArchiveTarget): Promise<SheetResult> {
   const started = Date.now();
   const base = { slug: sheet.slug, sheetId: sheet.id };
 
   try {
-    const response = await fetch(sheetCsvUrl(sheet.id), {
+    // A Wayback capture is a fixed snapshot at a fixed timestamp: the bytes
+    // cannot change, so once held there is nothing to ask for. Checked before
+    // the fetch rather than after, because the politeness is the point.
+    if (sheet.immutable && (await latestSnapshotHash(sheet.id)) !== null) {
+      return { ...base, ok: true, unchanged: true, skipped: true };
+    }
+
+    const response = await fetch(sheet.url, {
       redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS[sheet.format]),
       headers: { "user-agent": "backcountrywateroracle.com archive (preservation mirror)" },
       cache: "no-store",
     });
 
-    const body = await response.text();
+    // Read once, as bytes. Text is decoded from those bytes rather than the
+    // other way round, so a PDF is never put through a UTF-8 decode that would
+    // silently corrupt it before hashing.
+    const raw = Buffer.from(await response.arrayBuffer());
     const durationMs = Date.now() - started;
 
     if (!response.ok) {
@@ -84,25 +115,43 @@ async function archiveSheet(sheet: WaterSheet): Promise<SheetResult> {
       return { ...base, ok: false, error: `HTTP ${response.status}` };
     }
 
-    // A sheet that has been unshared returns 200 with an HTML sign-in page.
-    // Storing that as a snapshot would overwrite nothing but would record a
-    // capture that contains no data, and dedupe would then treat the real
-    // bytes as "changed" forever after.
-    if (/^\s*</.test(body)) {
+    // Both formats have a way of failing that returns 200 with the wrong body:
+    // an unshared sheet serves an HTML sign-in page, and a Wayback miss serves
+    // an HTML error page. Storing either would record a capture containing no
+    // data, and dedupe would then treat the real bytes as "changed" ever after.
+    const looksWrong =
+      sheet.format === "pdf"
+        ? raw.subarray(0, 5).toString("latin1") !== "%PDF-"
+        : /^\s*</.test(raw.subarray(0, 512).toString("utf8"));
+
+    if (looksWrong) {
+      const detail =
+        sheet.format === "pdf"
+          ? "Response was not a PDF — the capture may no longer be retrievable"
+          : "Response was HTML, not CSV — the sheet may no longer be public";
       await recordFetchAttempt({
         sheetId: sheet.id,
         ok: false,
         httpStatus: response.status,
-        byteSize: body.length,
+        byteSize: raw.length,
         durationMs,
-        error: "Response was HTML, not CSV — the sheet may no longer be public",
+        error: detail,
       });
-      return { ...base, ok: false, error: "HTML, not CSV — sheet may no longer be public" };
+      return { ...base, ok: false, error: detail };
     }
 
-    const contentHash = createHash("sha256").update(body).digest("hex");
+    const isText = sheet.format === "csv";
+    const body = isText ? raw.toString("utf8") : null;
+
+    const contentHash = createHash("sha256").update(raw).digest("hex");
     const lastHash = await latestSnapshotHash(sheet.id);
-    const { title, updatedLine } = parseProvenance(body);
+
+    // A CSV states its own title and currency in row 1. A PDF cannot be read
+    // here, so its provenance is the archived URL and capture time it came
+    // from — which describes those exact bytes just as well.
+    const { title, updatedLine } = body
+      ? parseProvenance(body)
+      : { title: null, updatedLine: sheet.provenance ?? null };
 
     // The title is recorded from the bytes, never assumed. `expectTitle` only
     // raises a flag: three of these ids arrived mislabelled from the issue that
@@ -117,10 +166,10 @@ async function archiveSheet(sheet: WaterSheet): Promise<SheetResult> {
         ok: true,
         unchanged: true,
         httpStatus: response.status,
-        byteSize: body.length,
+        byteSize: raw.length,
         durationMs,
       });
-      return { ...base, ok: true, unchanged: true, bytes: body.length, title };
+      return { ...base, ok: true, unchanged: true, bytes: raw.length, title };
     }
 
     const headers: Record<string, string> = {};
@@ -134,8 +183,10 @@ async function archiveSheet(sheet: WaterSheet): Promise<SheetResult> {
       title,
       updatedLine,
       contentHash,
-      byteSize: body.length,
+      byteSize: raw.length,
       body,
+      bodyBytes: body === null ? raw : null,
+      contentType: response.headers.get("content-type") ?? (isText ? "text/csv" : "application/pdf"),
       httpStatus: response.status,
       headers,
     });
@@ -145,7 +196,7 @@ async function archiveSheet(sheet: WaterSheet): Promise<SheetResult> {
       ok: true,
       unchanged: snapshotId === null,
       httpStatus: response.status,
-      byteSize: body.length,
+      byteSize: raw.length,
       durationMs,
       snapshotId,
     });
@@ -154,8 +205,8 @@ async function archiveSheet(sheet: WaterSheet): Promise<SheetResult> {
       ...base,
       ok: true,
       unchanged: snapshotId === null,
-      bytes: body.length,
-      datedEntries: countDatedEntries(body),
+      bytes: raw.length,
+      datedEntries: body ? countDatedEntries(body) : undefined,
       title,
       titleSurprise,
     };
@@ -178,13 +229,22 @@ export async function GET(request: Request) {
     return Response.json({ error: "Not authorized." }, { status: 401 });
   }
 
+  const startedAt = Date.now();
   const results: SheetResult[] = [];
-  for (const [i, sheet] of WATER_SHEETS.entries()) {
-    if (i > 0) await new Promise((r) => setTimeout(r, PAUSE_MS));
+
+  for (const [i, sheet] of ARCHIVE_TARGETS.entries()) {
+    if (Date.now() - startedAt > RUN_BUDGET_MS) {
+      results.push({ slug: sheet.slug, sheetId: sheet.id, ok: true, deferred: true });
+      continue;
+    }
+    // No pause before a target we are about to skip without fetching.
+    if (i > 0 && !(sheet.immutable && results.length)) {
+      await new Promise((r) => setTimeout(r, PAUSE_MS));
+    }
     results.push(await archiveSheet(sheet));
   }
 
-  const stored = results.filter((r) => r.ok && !r.unchanged).length;
+  const stored = results.filter((r) => r.ok && !r.unchanged && !r.deferred).length;
   const failed = results.filter((r) => !r.ok);
 
   return Response.json(
@@ -192,7 +252,9 @@ export async function GET(request: Request) {
       ran_at: new Date().toISOString(),
       sheets: results.length,
       stored,
-      unchanged: results.filter((r) => r.ok && r.unchanged).length,
+      unchanged: results.filter((r) => r.ok && r.unchanged && !r.skipped).length,
+      skipped: results.filter((r) => r.skipped).length,
+      deferred: results.filter((r) => r.deferred).length,
       failed: failed.length,
       surprises: results.filter((r) => r.titleSurprise).map((r) => r.slug),
       results,
