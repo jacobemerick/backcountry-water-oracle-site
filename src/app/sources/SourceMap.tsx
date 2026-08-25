@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { Map as LeafletMap, Marker } from "leaflet";
 import type { LatLon } from "@/lib/coords";
 import "leaflet/dist/leaflet.css";
+import styles from "./SourceMap.module.css";
 
 export type MapSource = {
   id: number;
@@ -93,9 +94,7 @@ export function SourceMap({
         L.circleMarker([s.lat, s.lon], {
           radius: 6,
           weight: 2,
-          color: "#0e7490",
-          fillColor: "#0e7490",
-          fillOpacity: 0.55,
+          className: styles.sourceMark,
         })
           .addTo(map)
           .bindTooltip(
@@ -133,7 +132,7 @@ export function SourceMap({
       }
       const icon = L.divIcon({
         className: "",
-        html: `<div style="width:18px;height:18px;border-radius:50%;background:#b45309;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4)"></div>`,
+        html: `<div class="${styles.pin}"></div>`,
         iconSize: [18, 18],
         iconAnchor: [9, 9],
       });
