@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { guardEngineRun } from "@/lib/rate-limit";
 import { engineRowsForSources, findSourceBySlug, sourcesNear } from "@/lib/db";
 import { EngineError, runForecast } from "@/lib/forecast";
-import { MIN_REPORTS_FOR_VERDICT } from "@/lib/present";
+import { MIN_REPORTS_FOR_VERDICT, THRESHOLD_COPY, confidenceOf } from "@/lib/present";
 import { formatDistance, formatLatLon } from "@/lib/coords";
 import { SiteShell } from "@/components/SiteShell";
 import {
@@ -17,6 +17,7 @@ import {
   TheRead,
   WhyThisRead,
 } from "@/components/SourceRead";
+import { ThinSourceSheet } from "@/components/ThinSourceSheet";
 import { ReportForm } from "./ReportForm";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +68,82 @@ export default async function SourcePage({ params }: Props) {
     }
   }
 
+  const neighbourList = neighbours
+    .filter((n) => n.id !== source.id)
+    .map((n) => ({
+      id: n.id,
+      name: n.name,
+      slug: n.slug,
+      distance_km: n.distance_km,
+      report_count: n.report_count,
+    }));
+
+  const reportForm = (
+    <ReportForm
+      slug={slug}
+      sourceName={source.name}
+      reportCount={rows.length}
+      minForVerdict={MIN_REPORTS_FOR_VERDICT}
+    />
+  );
+
+  /*
+   * Two page shapes, not one page with a hole in it.
+   *
+   * A thin source used to render this same layout with a hedged block where the
+   * verdict goes, which can be skimmed as a weak verdict — "there's a number,
+   * probably fine". That glance is the failure mode that actually hurts
+   * someone, so the absence is structural: no verdict slot, no collar, and a
+   * prose measure rather than the wide sheet, because a collar full of Record
+   * and Provenance would imply there is a reading to annotate.
+   */
+  if (!forecast) {
+    return (
+      <SiteShell context={<span className="value">{formatLatLon(source)}</span>}>
+        <div className="py-8">
+          <h1 className="hydro-display text-3xl sm:text-4xl">{source.name}</h1>
+          <p className="value mt-2 text-sm text-muted">{formatLatLon(source)}</p>
+          <p className="mt-3 max-w-2xl text-sm text-muted">
+            How this site decides what it can and cannot say —{" "}
+            <Link
+              href="/method"
+              className="underline decoration-border underline-offset-4 hover:text-accent"
+            >
+              the method
+            </Link>
+            .
+          </p>
+        </div>
+
+        <ThinSourceSheet
+          reportCount={rows.length}
+          neighbours={neighbourList}
+          engineError={engineError}
+        >
+          {reportForm}
+        </ThinSourceSheet>
+
+        {rows.length > 0 && (
+          <section className="mt-10">
+            <BlockLabel>Report history ({rows.length})</BlockLabel>
+            <ul className="mt-4 divide-y divide-border overflow-hidden rounded-lg border border-border">
+              {[...rows].reverse().map((r, i) => (
+                <li
+                  key={`${r.date}-${i}`}
+                  className="flex flex-wrap items-baseline gap-x-4 gap-y-1 bg-surface px-4 py-2.5"
+                >
+                  <span className="value text-sm">{r.date}</span>
+                  <span className="value text-sm text-accent">{r.score.toFixed(1)}</span>
+                  {r.status && <span className="text-sm text-muted">{r.status}</span>}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </SiteShell>
+    );
+  }
+
   return (
     <SiteShell width="sheet" context={<span className="value">{formatLatLon(source)}</span>}>
       <div className="py-8">
@@ -98,61 +175,36 @@ export default async function SourcePage({ params }: Props) {
       */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-x-10">
         <div className="lg:col-start-1">
-          {forecast ? (
-            <TheRead source={forecast} lastReported={lastReported} />
-          ) : (
-            <div className="rounded-lg border border-border bg-surface p-6">
-              <h2 className="text-lg font-semibold">
-                {rows.length === 0
-                  ? "No reports yet"
-                  : `${rows.length} report${rows.length === 1 ? "" : "s"} — not enough for a forecast`}
-              </h2>
-              <p className="mt-2 leading-relaxed text-muted">
-                {rows.length === 0 ? (
-                  <>
-                    This source is recorded, but nobody has reported what the water was doing. The
-                    model correlates a source&rsquo;s own report history against rainfall, so with
-                    no history there is nothing to correlate — and a guess dressed up as a forecast
-                    is the one thing this site should never show.
-                  </>
-                ) : (
-                  <>
-                    A correlation needs at least {MIN_REPORTS_FOR_VERDICT} observations before it
-                    means anything. Below that the engine will still produce a number, and that
-                    number is noise.
-                  </>
-                )}
-              </p>
-              {engineError && (
-                <pre className="mt-4 overflow-x-auto rounded border border-border bg-surface-sunk p-3 text-xs text-muted">
-                  {engineError}
-                </pre>
-              )}
-            </div>
+          <TheRead source={forecast} lastReported={lastReported} />
+
+          {/* A read above the floor but under the engine's weak-evidence
+              threshold is still a read — it just has to say so. Generated from
+              the constants, never typed. */}
+          {confidenceOf(forecast) === "weak" && (
+            <p className="mt-5 rounded-lg border-l-2 border-warn bg-warn-soft p-4 text-sm leading-relaxed">
+              <strong className="font-semibold text-warn">Thin evidence.</strong>{" "}
+              {THRESHOLD_COPY.weak(forecast.n)}
+            </p>
           )}
         </div>
 
         {/* The collar. Sunk ground and letterspaced keys, down the right margin
             on desktop; directly under the read on a phone, where there is no
             margin to hang anything in. */}
-        {forecast && (
-          <aside className="lg:col-start-2 lg:row-span-full">
+        <aside className="lg:col-start-2 lg:row-span-full">
             <div className="space-y-6 rounded-lg border border-border bg-surface-sunk p-5 lg:sticky lg:top-6">
               <SourceRecord source={forecast} />
               <SourcePooling source={forecast} />
-              <SourceProvenance source={forecast} />
-            </div>
-          </aside>
-        )}
+            <SourceProvenance source={forecast} />
+          </div>
+        </aside>
 
-        {forecast && (
-          <details className="why-this-read lg:col-start-1" open={false}>
+        <details className="why-this-read lg:col-start-1" open={false}>
             <summary className="collar-label cursor-pointer text-accent">Why this read</summary>
-            <div className="mt-5">
-              <WhyThisRead source={forecast} />
-            </div>
-          </details>
-        )}
+          <div className="mt-5">
+            <WhyThisRead source={forecast} />
+          </div>
+        </details>
 
         <section className="lg:col-start-1">
           <ReportForm
