@@ -163,3 +163,73 @@ export async function createReport(input: {
   `) as ReportRow[];
   return rows[0];
 }
+
+/* ---------------------------------------------------------------------------
+   The water-report mirror. Archiving only — see src/lib/water-sheets.ts.
+   --------------------------------------------------------------------------- */
+
+/** The hash of the most recent capture of a sheet, or null if we hold none. */
+export async function latestSnapshotHash(sheetId: string): Promise<string | null> {
+  const sql = db();
+  const rows = (await sql`
+    SELECT content_hash
+    FROM sheet_snapshots
+    WHERE sheet_id = ${sheetId}
+    ORDER BY retrieved_at DESC
+    LIMIT 1
+  `) as { content_hash: string }[];
+  return rows[0]?.content_hash ?? null;
+}
+
+/**
+ * Store a capture.
+ *
+ * ON CONFLICT DO NOTHING against (sheet_id, content_hash) makes this idempotent
+ * at the database rather than only in the caller's check: two overlapping runs,
+ * or a retry after a partial failure, cannot produce a duplicate row. Returns
+ * null when the bytes were already held.
+ */
+export async function insertSnapshot(input: {
+  sheetId: string;
+  title: string | null;
+  updatedLine: string | null;
+  contentHash: string;
+  byteSize: number;
+  body: string;
+  httpStatus: number;
+  headers: Record<string, string>;
+}): Promise<number | null> {
+  const sql = db();
+  const rows = (await sql`
+    INSERT INTO sheet_snapshots
+      (sheet_id, title, updated_line, content_hash, byte_size, body, http_status, headers)
+    VALUES
+      (${input.sheetId}, ${input.title}, ${input.updatedLine}, ${input.contentHash},
+       ${input.byteSize}, ${input.body}, ${input.httpStatus}, ${JSON.stringify(input.headers)})
+    ON CONFLICT (sheet_id, content_hash) DO NOTHING
+    RETURNING id::int AS id
+  `) as { id: number }[];
+  return rows[0]?.id ?? null;
+}
+
+/** Record an attempt, successful or not. The absence of these rows is the alarm. */
+export async function recordFetchAttempt(input: {
+  sheetId: string;
+  ok: boolean;
+  unchanged?: boolean;
+  httpStatus?: number | null;
+  byteSize?: number | null;
+  durationMs?: number | null;
+  error?: string | null;
+  snapshotId?: number | null;
+}): Promise<void> {
+  const sql = db();
+  await sql`
+    INSERT INTO sheet_fetch_attempts
+      (sheet_id, ok, unchanged, http_status, byte_size, duration_ms, error, snapshot_id)
+    VALUES
+      (${input.sheetId}, ${input.ok}, ${input.unchanged ?? false}, ${input.httpStatus ?? null},
+       ${input.byteSize ?? null}, ${input.durationMs ?? null}, ${input.error ?? null},
+       ${input.snapshotId ?? null})
+  `;
+}
