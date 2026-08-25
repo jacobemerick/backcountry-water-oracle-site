@@ -1,5 +1,6 @@
 import type { ReadableSource, SourceForecast } from "./forecast.ts";
 import { hasRead } from "./forecast.ts";
+import { nearestStep } from "./rubric.ts";
 
 /**
  * Presentation helpers — the layer that turns the engine's numbers into
@@ -88,14 +89,20 @@ export const CONFIDENCE_LABEL: Record<Confidence, string> = {
   moderate: "Moderate confidence",
 };
 
-/** Maps the engine's predicted flow (0–1) onto the rubric language people report in. */
+/**
+ * Maps the engine's predicted flow (0–1) onto the rubric language people report in.
+ *
+ * The words come from RUBRIC rather than being retyped here. This function used
+ * to carry its own copy of the six labels, and one had already drifted — it said
+ * "Pools / dripping" where the rubric says "Pools or dripping" — so the site
+ * showed one vocabulary on the read and asked for another on the form directly
+ * below it. That table is the contract between what a hiker saw and what the
+ * model reads; it does not get a second spelling.
+ *
+ * Banding is `nearestStep`'s, including its round-down tie rule.
+ */
 export function flowLabel(flow: number): string {
-  if (flow < 0.1) return "Dry";
-  if (flow < 0.3) return "Pools / dripping";
-  if (flow < 0.5) return "Trickle";
-  if (flow < 0.7) return "Moderate";
-  if (flow < 0.9) return "Strong";
-  return "Raging";
+  return nearestStep(flow).label;
 }
 
 /** Tone for the verdict banner. Dry and unknown are both "don't count on it". */
