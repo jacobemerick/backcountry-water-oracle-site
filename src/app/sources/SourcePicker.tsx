@@ -30,7 +30,7 @@ type Nearby = {
 /** Below this, the picker stops offering to create and insists it is the same source. */
 const SAME_SOURCE_KM = 0.05;
 
-export function SourcePicker({ sources }: { sources: MapSource[] }) {
+export function SourcePicker({ id, sources }: { id?: string; sources: MapSource[] }) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [point, setPoint] = useState<LatLon | null>(null);
@@ -138,7 +138,7 @@ export function SourcePicker({ sources }: { sources: MapSource[] }) {
   }
 
   return (
-    <div className="space-y-8">
+    <div id={id} className="scroll-mt-4 space-y-8">
       <SourceMap sources={sources} selected={point} onSelect={selectPoint} center={center} />
 
       <div>
