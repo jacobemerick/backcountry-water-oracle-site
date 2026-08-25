@@ -13,7 +13,13 @@
   --border: #d4c9af;
   --accent: #2d6ca6;
   --accent-soft: #dfeaf5;
-  --warn: #9c6a34;
+  /* Darkened from the palette's #9c6a34, which measured 4.41:1 on --surface and
+     3.72:1 on --warn-soft — under AA for body text. This token carries the
+     safety register: "Carry your water", the duplicate-source warning, and
+     every form error. Same hue (31°) and saturation, 5% lightness down, which
+     clears AA on all three light grounds. Dark was already fine and is
+     untouched. See #42. */
+  --warn: #895d2e;
   --warn-soft: #f0e5d0;
   /* Contour draws the terrain band. Overprint is the purple a quad uses for
      revision marks: here it flags things that are *about* the sheet rather than
