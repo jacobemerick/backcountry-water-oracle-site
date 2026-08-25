@@ -1,35 +1,68 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  WATER_SHEETS,
+  ARCHIVE_TARGETS,
   countDatedEntries,
   isNewSnapshot,
   parseProvenance,
-  sheetCsvUrl,
-} from "./water-sheets.ts";
+  waybackTimestampToIso,
+  waybackUrl,
+} from "./water-archive.ts";
 
 /** Row 1 as the sheets actually emit it, padding and all. */
 const REAL_HEADER =
   "Pacific Crest Trail Water Report -- Part One: Campo to Idyllwild ,,,,,Updated 06/27/2026 @ 5:41 pm     by Druid,";
 
 test("the registry is keyed on document id, with no collisions", () => {
-  const ids = WATER_SHEETS.map((s) => s.id);
-  const slugs = WATER_SHEETS.map((s) => s.slug);
+  const ids = ARCHIVE_TARGETS.map((s) => s.id);
+  const slugs = ARCHIVE_TARGETS.map((s) => s.slug);
   assert.equal(new Set(ids).size, ids.length, "duplicate sheet id");
   assert.equal(new Set(slugs).size, slugs.length, "duplicate slug");
-  for (const s of WATER_SHEETS) {
+  for (const s of ARCHIVE_TARGETS) {
     assert.ok(s.id.length > 20, `${s.slug} has an implausible id`);
     assert.match(s.slug, /^[a-z0-9-]+$/);
   }
 });
 
-test("every sheet exports keylessly", () => {
-  for (const s of WATER_SHEETS) {
-    const url = sheetCsvUrl(s.id);
-    assert.ok(url.startsWith("https://docs.google.com/spreadsheets/d/"));
-    assert.ok(url.endsWith("/export?format=csv"));
-    assert.ok(!/key=|token=/i.test(url), "the export must not carry credentials");
+test("every target fetches over https and carries no credentials", () => {
+  for (const t of ARCHIVE_TARGETS) {
+    assert.ok(t.url.startsWith("https://"), `${t.slug} must fetch over https`);
+    assert.ok(!/key=|token=|api_key/i.test(t.url), `${t.slug} must not carry credentials`);
   }
+});
+
+test("sheets export keylessly; PDFs come from the Wayback Machine", () => {
+  const csv = ARCHIVE_TARGETS.filter((t) => t.format === "csv");
+  const pdf = ARCHIVE_TARGETS.filter((t) => t.format === "pdf");
+  assert.ok(csv.length >= 8 && pdf.length >= 5);
+
+  for (const t of csv) {
+    assert.ok(t.url.startsWith("https://docs.google.com/spreadsheets/d/"));
+    assert.ok(t.url.endsWith("/export?format=csv"));
+  }
+  for (const t of pdf) {
+    assert.ok(t.url.startsWith("https://web.archive.org/web/"));
+    // `id_` asks for the original bytes rather than a rewritten page.
+    assert.match(t.url, /\/\d{14}id_\//, `${t.slug} must request raw bytes`);
+    assert.equal(t.immutable, true, "a fixed capture must never be re-fetched");
+    assert.ok(t.provenance, "a PDF cannot state its own provenance");
+  }
+});
+
+test("only immutable targets may be skipped once held", () => {
+  // A live sheet marked immutable would freeze the archive at its first capture
+  // and nothing would say so, which is the quietest possible failure here.
+  for (const t of ARCHIVE_TARGETS) {
+    if (t.immutable) assert.equal(t.format, "pdf");
+    if (t.url.includes("docs.google.com")) assert.notEqual(t.immutable, true);
+  }
+});
+
+test("wayback timestamps convert to real instants", () => {
+  assert.equal(waybackTimestampToIso("20160418174702"), "2016-04-18T17:47:02Z");
+  assert.equal(waybackTimestampToIso("20180205035808"), "2018-02-05T03:58:08Z");
+  assert.throws(() => waybackTimestampToIso("2016"), /Not a Wayback timestamp/);
+  assert.ok(waybackUrl("20160418174702", "http://x/y.pdf").includes("20160418174702id_/"));
 });
 
 test("provenance comes off the fetched row, padding and all", () => {

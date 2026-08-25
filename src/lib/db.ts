@@ -195,17 +195,28 @@ export async function insertSnapshot(input: {
   updatedLine: string | null;
   contentHash: string;
   byteSize: number;
-  body: string;
+  /** Exactly one of these is set; the table has a CHECK that says so. */
+  body: string | null;
+  bodyBytes: Buffer | null;
+  contentType: string;
   httpStatus: number;
   headers: Record<string, string>;
 }): Promise<number | null> {
   const sql = db();
+  // bytea goes over the wire as hex and is decoded server-side. Passing a
+  // Buffer through the serverless driver's parameter encoding is not something
+  // to leave to chance for bytes we are keeping precisely because they are hard
+  // to get again.
+  const hex = input.bodyBytes ? input.bodyBytes.toString("hex") : null;
   const rows = (await sql`
     INSERT INTO sheet_snapshots
-      (sheet_id, title, updated_line, content_hash, byte_size, body, http_status, headers)
+      (sheet_id, title, updated_line, content_hash, byte_size, body, body_bytes,
+       content_type, http_status, headers)
     VALUES
       (${input.sheetId}, ${input.title}, ${input.updatedLine}, ${input.contentHash},
-       ${input.byteSize}, ${input.body}, ${input.httpStatus}, ${JSON.stringify(input.headers)})
+       ${input.byteSize}, ${input.body},
+       ${hex === null ? null : sql`decode(${hex}, 'hex')`},
+       ${input.contentType}, ${input.httpStatus}, ${JSON.stringify(input.headers)})
     ON CONFLICT (sheet_id, content_hash) DO NOTHING
     RETURNING id::int AS id
   `) as { id: number }[];
