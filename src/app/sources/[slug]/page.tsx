@@ -64,6 +64,13 @@ export default async function SourcePage({ params }: Props) {
       <div className="py-8">
         <h1 className="hydro-display text-3xl tracking-tight sm:text-4xl">{source.name}</h1>
         <p className="value mt-2 text-sm text-muted">{formatLatLon(source)}</p>
+        <p className="mt-3 text-sm text-muted">
+          Every number below is a base rate from this source&rsquo;s own report history —{" "}
+          <Link href="/method" className="underline decoration-border underline-offset-4 hover:text-accent">
+            how the read is built
+          </Link>
+          .
+        </p>
       </div>
 
       {forecast ? (

@@ -1,77 +1,9 @@
 import Link from "next/link";
 import { SiteShell } from "@/components/SiteShell";
+import { Section } from "@/components/Section";
 
 const ENGINE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle";
 const SITE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle-site";
-
-/* The six-point rubric every field report is scored on. Kept in sync with the
-   /water-forecast skill — this table is the contract, and publishing it is also
-   how we teach people to report consistently. */
-const RUBRIC: { score: string; label: string; example: string }[] = [
-  { score: "0.0", label: "Dry", example: "no water, no pools" },
-  { score: "0.2", label: "Not flowing", example: "dripping, stagnant pools" },
-  { score: "0.4", label: "Trickle", example: "light but filterable" },
-  { score: "0.6", label: "Moderate", example: "about a quart per minute" },
-  { score: "0.8", label: "Strong", example: "about a gallon per minute" },
-  { score: "1.0", label: "Raging", example: "gallon-plus, loud" },
-];
-
-const STEPS: { n: string; title: string; body: string }[] = [
-  {
-    n: "01",
-    title: "Field reports",
-    body: "Dated observations from people who were actually standing there, each scored from bone dry to raging. A source with a long report history is one we can say something about; a source with three reports is not.",
-  },
-  {
-    n: "02",
-    title: "Precipitation",
-    body: "Daily rainfall back to 2007 for that source's exact coordinates, then antecedent totals over the 30, 60, 90, 180, 270 and 365 days before every single report.",
-  },
-  {
-    n: "03",
-    title: "Correlation",
-    body: "How tightly flow tracks rain in each of those windows, with the seasonal cycle statistically removed. The strongest window is that source's memory — how far back its water remembers the weather.",
-  },
-];
-
-const LIMITS: { title: string; body: string }[] = [
-  {
-    title: "It is a base rate, not a measurement",
-    body: "Nobody is watching the spring. This is what the historical record says about conditions like today's — genuinely useful for planning, and no substitute for the report of someone who walked past yesterday.",
-  },
-  {
-    title: "No reports, no read",
-    body: "The whole method rests on a source's own report history. For an unreported spring, the most we can honestly offer is how this year's rain compares to normal at that spot — which is not the same as saying there is water in it.",
-  },
-  {
-    title: "Summer storms are the weak spot",
-    body: "The precipitation model averages over roughly a 9–11 km grid, so it smooths out isolated monsoon cells — least reliable in exactly the season when a desert water call matters most. For a summer go/no-go, cross-check radar.",
-  },
-  {
-    title: "Thin data stays thin",
-    body: "Under about 25 reports, a correlation is suggestive at best. We would rather show you an honest shrug than a confident number built on four observations.",
-  },
-];
-
-function Section({
-  id,
-  eyebrow,
-  title,
-  children,
-}: {
-  id?: string;
-  eyebrow: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section id={id} className="scroll-mt-4 border-t border-border py-14 sm:py-20">
-      <p className="collar-label text-accent">{eyebrow}</p>
-      <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h2>
-      <div className="mt-8">{children}</div>
-    </section>
-  );
-}
 
 export default function Home() {
   return (
@@ -98,66 +30,35 @@ export default function Home() {
         </p>
       </section>
 
-      <Section id="method" eyebrow="Method" title="How the read is built">
-        <ol className="grid gap-4 sm:grid-cols-3">
-          {STEPS.map((s) => (
-            <li
-              key={s.n}
-              className="rounded-lg border border-border bg-surface p-5 transition-colors hover:border-accent"
-            >
-              <p className="font-mono text-xs text-accent">{s.n}</p>
-              <h3 className="mt-2 font-semibold">{s.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted">{s.body}</p>
-            </li>
-          ))}
-        </ol>
-
-        <figure className="mt-8 rounded-lg border-l-2 border-accent bg-accent-soft p-6">
-          <blockquote className="text-lg font-medium leading-relaxed text-balance">
-            The more reliable a water source is, the <em>less</em> precipitation predicts it.
-          </blockquote>
-          <figcaption className="mt-3 text-sm leading-relaxed text-muted">
-            It sounds backwards and it is the whole point. A true groundwater spring is decoupled
-            from last month&rsquo;s weather — that decoupling is <em>why</em> you can count on it.
-            A runoff-fed falls is a slave to it: on fast after a storm, off just as fast. So a weak
-            rain correlation is not a failed prediction. It is the finding.
-          </figcaption>
-        </figure>
-      </Section>
-
-      <Section eyebrow="Scoring" title="Every report becomes one number">
+      {/* Method, Scoring and What-this-cannot-tell-you now live at /method. The
+          essay is the most trustworthy thing on this site, so it moved rather
+          than shrank. */}
+      <Section eyebrow="Method" title="How the read is built">
         <p className="max-w-2xl leading-relaxed text-muted">
-          Trail reports are prose — &ldquo;good flow at the box,&rdquo; &ldquo;bone dry, tanks
-          held.&rdquo; The engine needs a number, so every observation is mapped onto one scale.
-          Report what is <em>usable</em>: if the seep proper is dry but the rock tanks are holding,
-          that is water.
+          Three steps: a source&rsquo;s own dated field reports, nearly two decades of daily
+          rainfall for its exact coordinates, and the correlation between them with the seasonal
+          cycle removed. The counter-intuitive part is that the more reliable a source is, the{" "}
+          <em>less</em> precipitation predicts it — and that is the finding, not a failure.
         </p>
-        <dl className="mt-6 overflow-hidden rounded-lg border border-border">
-          {RUBRIC.map((r, i) => (
-            <div
-              key={r.score}
-              className={`flex flex-wrap items-baseline gap-x-4 gap-y-1 px-5 py-3 ${
-                i % 2 ? "bg-surface-sunk" : "bg-surface"
-              }`}
-            >
-              <dt className="font-mono text-sm font-medium tabular-nums text-accent">
-                {r.score}
-              </dt>
-              <dd className="font-medium">{r.label}</dd>
-              <dd className="text-sm text-muted">{r.example}</dd>
-            </div>
-          ))}
-        </dl>
-      </Section>
-
-      <Section eyebrow="Honesty" title="What this cannot tell you">
-        <div className="grid gap-4 sm:grid-cols-2">
-          {LIMITS.map((l) => (
-            <div key={l.title} className="rounded-lg border border-border bg-surface p-5">
-              <h3 className="font-semibold">{l.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted">{l.body}</p>
-            </div>
-          ))}
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link
+            href="/method"
+            className="rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+          >
+            How the read is built
+          </Link>
+          <Link
+            href="/method#scoring"
+            className="rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-medium transition-colors hover:border-accent hover:text-accent"
+          >
+            The scoring rubric
+          </Link>
+          <Link
+            href="/method#limits"
+            className="rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-medium transition-colors hover:border-accent hover:text-accent"
+          >
+            What this cannot tell you
+          </Link>
         </div>
 
         <p className="mt-6 rounded-lg border-l-2 border-warn bg-warn-soft p-5 leading-relaxed">
