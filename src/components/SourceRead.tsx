@@ -1,4 +1,4 @@
-import type { SourceForecast } from "@/lib/forecast";
+import type { ReadableSource, SourceForecast } from "@/lib/forecast";
 import {
   CONFIDENCE_LABEL,
   FRESHNESS_LABEL,
@@ -184,7 +184,7 @@ export function TheRead({
   source,
   lastReported = null,
 }: {
-  source: SourceForecast;
+  source: ReadableSource;
   lastReported?: string | null;
 }) {
   const confidence = confidenceOf(source);
@@ -240,7 +240,7 @@ export function TheRead({
 }
 
 /** What the corpus for this source actually is. Collar material. */
-export function SourceRecord({ source }: { source: SourceForecast }) {
+export function SourceRecord({ source }: { source: ReadableSource }) {
   const confidence = confidenceOf(source);
   return (
     <div className="space-y-4">
@@ -275,7 +275,7 @@ export function SourceRecord({ source }: { source: SourceForecast }) {
  * about the terrain, which is exactly what pooling is: a statement about how
  * this source's numbers were arrived at, not about its water.
  */
-export function SourcePooling({ source }: { source: SourceForecast }) {
+export function SourcePooling({ source }: { source: ReadableSource }) {
   const pooling = explainPooling(source);
   if (!pooling) return null;
   return (
@@ -287,7 +287,7 @@ export function SourcePooling({ source }: { source: SourceForecast }) {
 }
 
 /** Where the numbers came from. Collar material, and the least urgent of it. */
-export function SourceProvenance({ source }: { source: SourceForecast }) {
+export function SourceProvenance({ source }: { source: ReadableSource }) {
   const [recordStart, recordEnd] = source.reports.precip_span;
   return (
     <div>
@@ -328,7 +328,7 @@ export function SourceProvenance({ source }: { source: SourceForecast }) {
  * calendar artefact, and someone deciding a water carry deserves to see which
  * one they are being handed.
  */
-export function WhyThisRead({ source }: { source: SourceForecast }) {
+export function WhyThisRead({ source }: { source: ReadableSource }) {
   const showCorrelations = confidenceOf(source) !== "none";
 
   return (

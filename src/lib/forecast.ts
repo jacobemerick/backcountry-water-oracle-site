@@ -60,6 +60,44 @@ export type ReportAccounting = {
   precip_span: [string, string];
 };
 
+/**
+ * Antecedent rain for a window, ranked against the same calendar window in
+ * every other year of that coordinate's record.
+ *
+ * Needs no field reports, so it is the only reading an unreported coordinate
+ * gets — and it is emphatically **not** a flow verdict. "This is the wettest
+ * 30 days in 19 years at this spot" says nothing about whether a particular
+ * seep is running.
+ */
+export type RainPercentile = {
+  inches: number;
+  /** Percentile against the same window in other years. */
+  pct: number;
+  n_years: number;
+  median_in: number;
+};
+
+/** A reported source inside the pooling radius, carrying its own read. */
+export type NeighborRead = {
+  name: string;
+  distance_km: number;
+  n: number;
+  type: string | null;
+  verdict: string | null;
+};
+
+/**
+ * A source's read.
+ *
+ * **Everything verdict-derived is nullable.** Since engine 0.2.0 a source with
+ * no usable reports appears here with `n: 0` and `verdict`, `best`, `type`,
+ * `pct_dry`, `mean_flow`, `precip_in` and `predicted_flow` all null, instead of
+ * being dropped from the payload and mentioned only in `notes`. Branch on
+ * `n === 0` (equivalently `verdict === null`) before reading any of them.
+ *
+ * The keys are never *absent*, so nothing needs to test for existence — which
+ * is why these are `T | null` rather than optional.
+ */
 export type SourceForecast = {
   name: string;
   lat: number;
@@ -68,19 +106,64 @@ export type SourceForecast = {
   n: number;
   reports: ReportAccounting;
   small_n: boolean;
+  pct_dry: number | null;
+  mean_flow: number | null;
+  annual_precip_in: number;
+  type: string | null;
+  /** Empty when there are no usable reports. */
+  mean_flow_by_month: Record<string, number>;
+  /** Empty when there are no usable reports. */
+  correlations: Correlation[];
+  best: BestWindow | null;
+  asof: string;
+  precip_in: number | null;
+  predicted_flow: number | null;
+  verdict: string | null;
+  harmonics: number;
+  /** Present for every source, reports or not. Never a flow verdict. */
+  rain_percentiles: Record<string, RainPercentile>;
+  /** Reported sources within the pooling radius, nearest first. */
+  neighbors: NeighborRead[];
+  /**
+   * True when nearby sources disagree on `type`. The field to lead with when
+   * offering a neighbour: disagreement is the evidence that no stand-in was
+   * safe.
+   */
+  neighbors_disagree: boolean;
+  /** Null on this host — see services/engine/app.py. */
+  radar_check: unknown | null;
+};
+
+/**
+ * A source whose verdict-derived fields are actually populated.
+ *
+ * Since 0.2.0 the engine returns unreported sources in `sources[]` with those
+ * fields null, so "does this source have a read" became a runtime question. It
+ * is answered once, here, rather than with a null check at each of the dozen
+ * places that read them.
+ */
+export type ReadableSource = SourceForecast & {
   pct_dry: number;
   mean_flow: number;
-  annual_precip_in: number;
   type: string;
-  mean_flow_by_month: Record<string, number>;
-  correlations: Correlation[];
   best: BestWindow;
-  asof: string;
   precip_in: number;
   predicted_flow: number;
   verdict: string;
-  harmonics: number;
 };
+
+/**
+ * Narrows to a source the engine actually produced a read for.
+ *
+ * Keyed on `verdict`, which the engine nulls together with the rest of the
+ * verdict-derived fields. Note this is a *weaker* claim than the site's own
+ * MIN_REPORTS_FOR_VERDICT floor: the engine will happily read two observations,
+ * and `confidenceOf` is what refuses to show it. This predicate only says the
+ * fields are safe to read.
+ */
+export function hasRead(s: SourceForecast): s is ReadableSource {
+  return s.verdict !== null && s.best !== null;
+}
 
 /**
  * An engine diagnostic. These are objects, not strings — see forecast.py's

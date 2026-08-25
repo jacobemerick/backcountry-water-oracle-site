@@ -1,7 +1,9 @@
 {
   "asof": "2026-08-05",
   "params": {
-    "engine_version": "0.1.0",
+    "engine_version": "0.2.0",
+    "precip": "open-meteo",
+    "radar": "none",
     "pool": true,
     "pool_radius_km": 25.0,
     "harmonics": 1,
@@ -29,12 +31,12 @@
         "excluded_after_precip": 0,
         "precip_span": [
           "2007-01-01",
-          "2026-07-30"
+          "2026-08-05"
         ]
       },
       "pct_dry": 14,
       "mean_flow": 0.4188,
-      "annual_precip_in": 19.4,
+      "annual_precip_in": 19.38,
       "type": "Flashy (needs recent rain)",
       "mean_flow_by_month": {
         "1": 0.5846,
@@ -97,11 +99,52 @@
         "group_n": 3,
         "signal_check": "survives -> genuine rain response"
       },
-      "asof": "2026-07-30",
-      "precip_in": 4.613,
-      "predicted_flow": 0.72,
+      "asof": "2026-08-05",
+      "precip_in": 4.644,
+      "predicted_flow": 0.76,
       "verdict": "Likely flowing well",
-      "harmonics": 1
+      "harmonics": 1,
+      "rain_percentiles": {
+        "30d": {
+          "inches": 4.644,
+          "pct": 89,
+          "n_years": 19,
+          "median_in": 1.174
+        },
+        "60d": {
+          "inches": 4.983,
+          "pct": 84,
+          "n_years": 19,
+          "median_in": 1.493
+        },
+        "90d": {
+          "inches": 5.278,
+          "pct": 84,
+          "n_years": 19,
+          "median_in": 2.722
+        },
+        "180d": {
+          "inches": 8.228,
+          "pct": 53,
+          "n_years": 19,
+          "median_in": 7.215
+        },
+        "270d": {
+          "inches": 15.207,
+          "pct": 61,
+          "n_years": 18,
+          "median_in": 13.48
+        },
+        "365d": {
+          "inches": 25.103,
+          "pct": 83,
+          "n_years": 18,
+          "median_in": 17.392
+        }
+      },
+      "neighbors": [],
+      "neighbors_disagree": false,
+      "radar_check": null
     },
     {
       "name": "Castersen Seep",
@@ -116,12 +159,12 @@
         "excluded_after_precip": 0,
         "precip_span": [
           "2007-01-01",
-          "2026-07-30"
+          "2026-08-05"
         ]
       },
       "pct_dry": 33,
       "mean_flow": 0.4133,
-      "annual_precip_in": 19.4,
+      "annual_precip_in": 19.38,
       "type": "Flashy (needs recent rain)",
       "mean_flow_by_month": {
         "4": 0.8,
@@ -180,11 +223,52 @@
         "group_n": 3,
         "signal_check": "partly seasonal, real signal remains"
       },
-      "asof": "2026-07-30",
-      "precip_in": 4.897,
+      "asof": "2026-08-05",
+      "precip_in": 4.983,
       "predicted_flow": 0.48,
       "verdict": "Probably has water (light flow / pools)",
-      "harmonics": 1
+      "harmonics": 1,
+      "rain_percentiles": {
+        "30d": {
+          "inches": 4.644,
+          "pct": 89,
+          "n_years": 19,
+          "median_in": 1.174
+        },
+        "60d": {
+          "inches": 4.983,
+          "pct": 84,
+          "n_years": 19,
+          "median_in": 1.493
+        },
+        "90d": {
+          "inches": 5.278,
+          "pct": 84,
+          "n_years": 19,
+          "median_in": 2.722
+        },
+        "180d": {
+          "inches": 8.228,
+          "pct": 53,
+          "n_years": 19,
+          "median_in": 7.215
+        },
+        "270d": {
+          "inches": 15.207,
+          "pct": 61,
+          "n_years": 18,
+          "median_in": 13.48
+        },
+        "365d": {
+          "inches": 25.103,
+          "pct": 83,
+          "n_years": 18,
+          "median_in": 17.392
+        }
+      },
+      "neighbors": [],
+      "neighbors_disagree": false,
+      "radar_check": null
     },
     {
       "name": "Chilson Spring",
@@ -199,12 +283,12 @@
         "excluded_after_precip": 0,
         "precip_span": [
           "2007-01-01",
-          "2026-07-30"
+          "2026-08-05"
         ]
       },
       "pct_dry": 3,
       "mean_flow": 0.5,
-      "annual_precip_in": 19.4,
+      "annual_precip_in": 19.38,
       "type": "Reliable (groundwater-buffered)",
       "mean_flow_by_month": {
         "1": 0.45,
@@ -266,11 +350,52 @@
         "group_n": 3,
         "signal_check": "survives -> genuine rain response"
       },
-      "asof": "2026-07-30",
-      "precip_in": 5.582,
-      "predicted_flow": 0.36,
+      "asof": "2026-08-05",
+      "precip_in": 5.278,
+      "predicted_flow": 0.44,
       "verdict": "Probably has water (light flow / pools)",
-      "harmonics": 1
+      "harmonics": 1,
+      "rain_percentiles": {
+        "30d": {
+          "inches": 4.644,
+          "pct": 89,
+          "n_years": 19,
+          "median_in": 1.174
+        },
+        "60d": {
+          "inches": 4.983,
+          "pct": 84,
+          "n_years": 19,
+          "median_in": 1.493
+        },
+        "90d": {
+          "inches": 5.278,
+          "pct": 84,
+          "n_years": 19,
+          "median_in": 2.722
+        },
+        "180d": {
+          "inches": 8.228,
+          "pct": 53,
+          "n_years": 19,
+          "median_in": 7.215
+        },
+        "270d": {
+          "inches": 15.207,
+          "pct": 61,
+          "n_years": 18,
+          "median_in": 13.48
+        },
+        "365d": {
+          "inches": 25.103,
+          "pct": 83,
+          "n_years": 18,
+          "median_in": 17.392
+        }
+      },
+      "neighbors": [],
+      "neighbors_disagree": false,
+      "radar_check": null
     }
   ],
   "notes": []
