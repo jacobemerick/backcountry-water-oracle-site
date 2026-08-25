@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { RUBRIC } from "./rubric.ts";
 import {
   FRESHNESS_NOTE,
+  flowLabel,
   MIN_REPORTS_FOR_VERDICT,
   SMALL_N_THRESHOLD,
   THRESHOLD_COPY,
@@ -100,4 +102,40 @@ test("threshold copy counts singulars and the shortfall correctly", () => {
   assert.match(THRESHOLD_COPY.needed(MIN_REPORTS_FOR_VERDICT - 1), /^1 more report /);
   assert.match(THRESHOLD_COPY.needed(0), new RegExp(`^${MIN_REPORTS_FOR_VERDICT} more reports `));
   assert.match(THRESHOLD_COPY.needed(MIN_REPORTS_FOR_VERDICT), /enough reports for a read/);
+});
+
+/**
+ * flowLabel used to carry its own copy of the six rubric labels and one had
+ * already drifted. These tests are what stops a second spelling appearing.
+ */
+test("every flowLabel output is a rubric label", () => {
+  const allowed = new Set(RUBRIC.map((step) => step.label));
+  for (let i = 0; i <= 100; i++) {
+    const label = flowLabel(i / 100);
+    assert.ok(allowed.has(label), `flowLabel(${i / 100}) returned "${label}", which is not in RUBRIC`);
+  }
+});
+
+test("flowLabel spans the whole rubric and stays monotonic", () => {
+  assert.equal(flowLabel(0), RUBRIC[0].label);
+  assert.equal(flowLabel(1), RUBRIC[RUBRIC.length - 1].label);
+
+  // More water never reads as less. A non-monotonic banding would let a wetter
+  // prediction render drier than a drier one.
+  let lastIndex = 0;
+  for (let i = 0; i <= 100; i++) {
+    const index = RUBRIC.findIndex((step) => step.label === flowLabel(i / 100));
+    assert.ok(index >= lastIndex, `flowLabel went backwards at ${i / 100}`);
+    lastIndex = index;
+  }
+});
+
+test("ties round down, toward less water", () => {
+  // Exactly between two anchors, the drier label wins — overstating a seep is
+  // the more expensive error.
+  assert.equal(flowLabel(0.1), "Dry");
+  assert.equal(flowLabel(0.3), "Pools or dripping");
+  assert.equal(flowLabel(0.5), "Trickle");
+  assert.equal(flowLabel(0.7), "Moderate");
+  assert.equal(flowLabel(0.9), "Strong");
 });

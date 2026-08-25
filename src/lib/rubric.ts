@@ -46,7 +46,19 @@ export function isRubricScore(value: number): boolean {
   return RUBRIC.some((step) => Math.abs(step.score - value) < 1e-9);
 }
 
-/** Nearest rubric step to an arbitrary score — for rendering imported rows. */
+/**
+ * Nearest rubric step to an arbitrary score.
+ *
+ * The single place a continuous number becomes rubric language — used both for
+ * rendering imported rows and, via `flowLabel`, for every predicted flow the
+ * site shows.
+ *
+ * **Ties round down, toward less water.** A value sitting exactly between two
+ * anchors is reported as the drier of them, because the cost of the two errors
+ * is not symmetric: overstating a seep sends someone past it with an empty
+ * bottle. The `<` rather than `<=` in the reduce below is what does it, and it
+ * is deliberate.
+ */
 export function nearestStep(score: number): RubricStep {
   return RUBRIC.reduce((best, step) =>
     Math.abs(step.score - score) < Math.abs(best.score - score) ? step : best,
