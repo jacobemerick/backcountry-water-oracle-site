@@ -108,6 +108,29 @@ Licences differ and are recorded per row. PCTA publish under CC BY 4.0. The ATA
 layer is public but states no licence, which puts it on the same footing as their
 water-report PDFs.
 
+## What an import would produce
+
+`npm run import:dry-run` parses the newest archived snapshot of each sheet,
+joins the miles to coordinates, and reports the yield. **It writes nothing.**
+
+That separation is deliberate. Parsing and geolocating archived bytes is ours to
+do; putting somebody else's volunteer-compiled reports into a public database is
+not, and neither the PCT Water Report nor the ATA's material carries a licence
+grant. The dry run exists so that conversation can happen with real numbers, and
+so the stewards can be shown exactly what would be produced from their data
+before any of it is used.
+
+Current yield from the archived PCT sheets: **3,104 dated observations across
+about 850 distinct sources, all of them geolocated.** 29 rows are dropped — 12
+carrying no date, 17 carrying no mile — and every drop is counted by reason
+rather than passing silently, because `n`, `%dry` and every correlation describe
+what was actually used.
+
+No model is needed to extract any of that: the report cells are rigidly
+formatted stacks of `MM/DD/YY (Reporter): free text`. Turning that free text into
+a 0–1 rubric score is the one step that does, and it is deliberately left as a
+seam rather than guessed at here.
+
 **Attribution.** The PCT Water Report is volunteer work with a documented
 lineage — Halfmile originally, stewarded now by Druid and others. It carries no
 licence grant, only a warranty disclaimer. Mirroring for preservation is
