@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ForecastResult } from "./forecast.ts";
-import { confidenceOf, monthlyFlow, verdictTone } from "./present.ts";
+import { SMALL_N_THRESHOLD, confidenceOf, monthlyFlow, verdictTone } from "./present.ts";
 
 /**
  * Guards the boundary with the Python engine.
@@ -173,4 +173,20 @@ test("the minimum-n floor suppresses a verdict on thin data", () => {
   const thin = { ...THREE.sources[0], n: 4, small_n: true };
   assert.equal(confidenceOf(thin), "none");
   assert.equal(verdictTone(thin), "unknown");
+});
+
+/**
+ * SMALL_N_THRESHOLD mirrors a number that actually lives in the engine, so it
+ * is asserted against real engine output rather than trusted. Castersen has
+ * n=15 and carries small_n; Big Kahuna has n=160 and does not. If the engine
+ * ever moves its threshold, this fails instead of the copy quietly lying.
+ */
+test("SMALL_N_THRESHOLD agrees with the engine's own small_n flag", () => {
+  for (const s of THREE.sources) {
+    assert.equal(
+      s.small_n,
+      s.n < SMALL_N_THRESHOLD,
+      `${s.name} has n=${s.n}; small_n should be ${s.n < SMALL_N_THRESHOLD}`,
+    );
+  }
 });

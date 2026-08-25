@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SiteShell } from "@/components/SiteShell";
 import { Section } from "@/components/Section";
 import { RUBRIC, RUBRIC_GUIDANCE } from "@/lib/rubric";
+import { MIN_REPORTS_FOR_VERDICT, SMALL_N_THRESHOLD } from "@/lib/present";
 
 const ENGINE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle";
 const SITE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle-site";
@@ -46,13 +47,15 @@ const LIMITS: { title: string; body: string }[] = [
     body: "The precipitation model averages over roughly a 9–11 km grid, so it smooths out isolated monsoon cells — least reliable in exactly the season when a desert water call matters most. For a summer go/no-go, cross-check radar.",
   },
   {
-    // TODO(#37): "about 25" is hardcoded, and it is not the threshold the code
-    // refuses at — present.ts stops showing a verdict at 10, while 25 is where
-    // the engine drops its small_n flag. Two different numbers, one sentence.
-    // Moved verbatim so this stays a move; #37 owns generating both sentences
-    // from the constants.
+    // Two thresholds, two sentences, both generated. They are different
+    // behaviours and collapsing them into one number — which the mockups did —
+    // describes neither.
     title: "Thin data stays thin",
-    body: "Under about 25 reports, a correlation is suggestive at best. We would rather show you an honest shrug than a confident number built on four observations.",
+    body:
+      `Under ${MIN_REPORTS_FOR_VERDICT} reports this site issues no read at all: the engine ` +
+      `will still produce a number and that number is noise. Between ${MIN_REPORTS_FOR_VERDICT} ` +
+      `and ${SMALL_N_THRESHOLD} you get a read labelled weak — suggestive, not solid. We would ` +
+      `rather show an honest shrug than a confident number built on four observations.`,
   },
 ];
 

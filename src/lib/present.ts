@@ -15,18 +15,69 @@ import type { SourceForecast } from "./forecast.ts";
  * operator knows the data, that is fine. On a public site where someone is
  * deciding how much water to carry into the Sonoran desert in June, a
  * confident number built on four observations is the single most dangerous
- * thing this site could render. The engine's own docs call anything under 25
- * "suggestive, not solid"; 10 is where we stop showing a verdict at all.
+ * thing this site could render. The engine's own docs call anything under
+ * SMALL_N_THRESHOLD "suggestive, not solid"; this is where we stop showing a
+ * verdict at all.
  */
 export const MIN_REPORTS_FOR_VERDICT = 10;
+
+/**
+ * The engine's own weak-evidence threshold — where it sets `small_n`.
+ *
+ * This is a *different* number from MIN_REPORTS_FOR_VERDICT and the two must
+ * never be collapsed into one sentence. Below the floor we issue no read at
+ * all; between the floor and here we issue one and say it is weak. The design
+ * mockups merged them into "needs about twenty-five", which described neither
+ * behaviour, and this is the number that decides whether somebody is shown a
+ * verdict about desert water.
+ *
+ * Declared here so copy can be generated from it rather than typed. It mirrors
+ * the engine and is asserted against real engine output in contract.test.ts.
+ */
+export const SMALL_N_THRESHOLD = 25;
 
 export type Confidence = "none" | "weak" | "moderate";
 
 export function confidenceOf(s: SourceForecast): Confidence {
   if (s.n < MIN_REPORTS_FOR_VERDICT) return "none";
-  if (s.small_n) return "weak"; // engine flags n < 25
+  if (s.small_n) return "weak"; // engine flags n < SMALL_N_THRESHOLD
   return "moderate";
 }
+
+/**
+ * The two threshold sentences, generated from the constants.
+ *
+ * They say genuinely different things and both have to exist. Hand-typing
+ * either one is how the numbers drifted apart in the first place, so nothing
+ * user-facing should ever contain a threshold literal again.
+ */
+export const THRESHOLD_COPY = {
+  /** Below the floor: no read at all. */
+  noRead(n: number): string {
+    return (
+      `${n} report${n === 1 ? "" : "s"} — a correlation needs at least ` +
+      `${MIN_REPORTS_FOR_VERDICT} before it means anything, so no read is issued here.`
+    );
+  },
+
+  /** Above the floor, under the engine's weak-evidence threshold. */
+  weak(n: number): string {
+    return (
+      `${n} reports is above the ${MIN_REPORTS_FOR_VERDICT} needed for a read, but under ` +
+      `${SMALL_N_THRESHOLD} the engine flags the evidence as thin. Treat this as weak — ` +
+      `suggestive, not solid.`
+    );
+  },
+
+  /** What a thin source needs to stop being thin. */
+  needed(n: number): string {
+    const short = Math.max(0, MIN_REPORTS_FOR_VERDICT - n);
+    return short === 0
+      ? `This source has enough reports for a read.`
+      : `${short} more report${short === 1 ? "" : "s"} would reach the ` +
+          `${MIN_REPORTS_FOR_VERDICT} needed for a read.`;
+  },
+} as const;
 
 /** Never "high" — see MIN_REPORTS_FOR_VERDICT. This model does not earn it. */
 export const CONFIDENCE_LABEL: Record<Confidence, string> = {
