@@ -8,11 +8,28 @@ import { MIN_REPORTS_FOR_VERDICT, SMALL_N_THRESHOLD } from "@/lib/present";
 const ENGINE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle";
 const SITE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle-site";
 
+const METHOD_DESCRIPTION =
+  "How the read is built: a source's own field reports, correlated against nearly two " +
+  "decades of daily precipitation for its exact coordinates — and what that cannot tell you.";
+
 export const metadata: Metadata = {
   title: "Method",
-  description:
-    "How the read is built: a source's own field reports, correlated against nearly two " +
-    "decades of daily precipitation for its exact coordinates — and what that cannot tell you.",
+  description: METHOD_DESCRIPTION,
+  alternates: { canonical: "/method" },
+  // Same reason as the source page: without this, sharing /method unfurls as
+  // the front page rather than as the method.
+  openGraph: {
+    title: "Method · Backcountry Water Oracle",
+    description: METHOD_DESCRIPTION,
+    url: "/method",
+    siteName: "Backcountry Water Oracle",
+    type: "article",
+  },
+  twitter: {
+    card: "summary",
+    title: "Method · Backcountry Water Oracle",
+    description: METHOD_DESCRIPTION,
+  },
 };
 
 const STEPS: { n: string; title: string; body: string }[] = [

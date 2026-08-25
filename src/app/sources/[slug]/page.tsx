@@ -25,12 +25,35 @@ export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ slug: string }> };
 
+/**
+ * The source page is the URL people actually share, so its social metadata has
+ * to describe the source rather than the site.
+ *
+ * It did not. `title` and `description` were set, but `openGraph` was not — and
+ * an unset `openGraph` does not inherit them, it inherits the root layout's
+ * static block, which hardcodes the site name and `url: "/"`. So every shared
+ * source link unfurled as the generic front page: same title, same blurb,
+ * pointing at the homepage. The `title.template` in the layout only rewrites
+ * the `<title>` tag; it never touches `og:title`.
+ */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const source = await findSourceBySlug(slug).catch(() => null);
-  return source
-    ? { title: source.name, description: `Water forecast and report history for ${source.name}.` }
-    : { title: "Source not found" };
+  if (!source) return { title: "Source not found" };
+
+  const title = `${source.name} · Backcountry Water Oracle`;
+  const description =
+    `Is there water at ${source.name}? A read built from this source's own field ` +
+    `reports, correlated against nearly two decades of rainfall at ${formatLatLon(source)}.`;
+  const url = `/sources/${slug}`;
+
+  return {
+    title: source.name,
+    description,
+    alternates: { canonical: url },
+    openGraph: { title, description, url, siteName: "Backcountry Water Oracle", type: "article" },
+    twitter: { card: "summary", title, description },
+  };
 }
 
 export default async function SourcePage({ params }: Props) {
