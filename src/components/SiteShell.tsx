@@ -35,15 +35,27 @@ const METHOD_HREF = "/method";
  * `context` is the right-hand slot: a back-link, a quad name, whatever the route
  * knows and the shell cannot.
  */
+/**
+ * "prose" is a reading measure and the default. "sheet" is wider, for the one
+ * page that lays a body out beside a marginal collar — a two-column sheet
+ * squeezed into a prose measure is just two narrow columns.
+ */
+const WIDTH = {
+  prose: "max-w-3xl",
+  sheet: "max-w-6xl",
+} as const;
+
 export function SiteShell({
   children,
   context,
+  width = "prose",
 }: {
   children: React.ReactNode;
   context?: React.ReactNode;
+  width?: keyof typeof WIDTH;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-5 sm:px-8">
+    <div className={`mx-auto flex w-full ${WIDTH[width]} flex-1 flex-col px-5 sm:px-8`}>
       <header>
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 pt-6 pb-2">
           <Link

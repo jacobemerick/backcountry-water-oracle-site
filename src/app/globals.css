@@ -153,3 +153,27 @@ body {
     font-weight: 700;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The "Why this read" disclosure on the answer page.
+
+   On a phone, the correlation table and the seasonality chart are a lot to
+   scroll past before reaching the report form, so they collapse. On a desktop
+   sheet there is room for them in the body, so the summary is hidden and the
+   content is forced open.
+
+   Guarded on `::details-content` support: where the browser lacks it, the
+   summary stays visible at every width and the disclosure simply works by hand.
+   The failure mode is one extra click, never hidden content with no control.
+   --------------------------------------------------------------------------- */
+@media (min-width: 1024px) {
+  @supports selector(::details-content) {
+    .why-this-read > summary {
+      display: none;
+    }
+
+    .why-this-read::details-content {
+      content-visibility: visible;
+    }
+  }
+}
