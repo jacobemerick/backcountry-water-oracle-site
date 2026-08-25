@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SiteShell } from "@/components/SiteShell";
 import { Section } from "@/components/Section";
+import { SearchField } from "@/components/SearchField";
 
 const ENGINE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle";
 const SITE_REPO = "https://github.com/jacobemerick/backcountry-water-oracle-site";
@@ -23,6 +24,12 @@ export default function Home() {
           two decades of daily precipitation for its exact coordinates, and give you a read on
           whether it&rsquo;s likely to have water.
         </p>
+
+        {/* The spine of the whole direction. Everything else on this site is
+            the answer page this leads to. */}
+        <div className="mt-10 max-w-2xl">
+          <SearchField />
+        </div>
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-muted sm:text-xl">
           You also get the more interesting answer: <em>what kind of source it is</em> — flashy
           runoff that lives and dies by recent rain, or buffered groundwater that barely notices

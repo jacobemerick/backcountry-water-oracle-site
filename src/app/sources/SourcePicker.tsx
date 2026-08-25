@@ -30,10 +30,20 @@ type Nearby = {
 /** Below this, the picker stops offering to create and insists it is the same source. */
 const SAME_SOURCE_KM = 0.05;
 
-export function SourcePicker({ id, sources }: { id?: string; sources: MapSource[] }) {
+export function SourcePicker({
+  id,
+  sources,
+  initialPoint = null,
+}: {
+  id?: string;
+  sources: MapSource[];
+  /** Pre-aimed from the search field's "add it", so a coordinate typed on the
+      home page is not typed a second time here. */
+  initialPoint?: LatLon | null;
+}) {
   const router = useRouter();
-  const [text, setText] = useState("");
-  const [point, setPoint] = useState<LatLon | null>(null);
+  const [text, setText] = useState(initialPoint ? formatLatLon(initialPoint) : "");
+  const [point, setPoint] = useState<LatLon | null>(initialPoint);
   const [parseError, setParseError] = useState<string | null>(null);
   const [nearby, setNearby] = useState<Nearby[] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -46,11 +56,12 @@ export function SourcePicker({ id, sources }: { id?: string; sources: MapSource[
   // Centre on the existing corpus, falling back to central Arizona where the
   // seed data lives. An empty map centred on the ocean helps nobody.
   const center = useMemo<LatLon>(() => {
+    if (initialPoint) return initialPoint;
     if (sources.length === 0) return { lat: 34.08, lon: -111.47 };
     const lat = sources.reduce((a, s) => a + s.lat, 0) / sources.length;
     const lon = sources.reduce((a, s) => a + s.lon, 0) / sources.length;
     return { lat, lon };
-  }, [sources]);
+  }, [sources, initialPoint]);
 
   const selectPoint = useCallback((next: LatLon) => {
     setPoint(next);
