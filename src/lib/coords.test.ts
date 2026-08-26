@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { distanceKm, formatDistance, parseLatLon, slugify } from "./coords.ts";
+import {
+  boundsOf,
+  distanceKm,
+  formatDistance,
+  isWorthFitting,
+  parseLatLon,
+  slugify,
+  type LatLon,
+} from "./coords.ts";
 
 /** Assert a parse lands within ~1 metre of the expected point. */
 function assertParses(input: string, lat: number, lon: number, format?: string) {
@@ -93,4 +101,70 @@ test("slugify matches the seed script", () => {
   assert.equal(slugify("Big Kahuna Falls - Mazatzal Wilderness"), "big-kahuna-falls-mazatzal-wilderness");
   assert.equal(slugify("Chilson Spring"), "chilson-spring");
   assert.equal(slugify("O'Haco Tank"), "ohaco-tank");
+});
+
+// ---------------------------------------------------------------------------
+// boundsOf / isWorthFitting — the map's opening view
+// ---------------------------------------------------------------------------
+
+/** The eight sources of the 2026-08 backfill, as they actually sit in prod. */
+const CORPUS: LatLon[] = [
+  { lat: 34.09059, lon: -111.46653 }, // Castersen Seep, Mazatzals
+  { lat: 34.08716, lon: -111.45293 }, // Big Kahuna Falls
+  { lat: 34.087157, lon: -111.444733 }, // Hawaiian Mist
+  { lat: 34.092008, lon: -111.434932 }, // Garden Seep
+  { lat: 33.416778, lon: -111.349032 }, // Barks Canyon, Superstitions
+  { lat: 33.398729, lon: -111.337641 }, // Bark at Dutchman Crossing
+  { lat: 33.900657, lon: -110.935416 }, // McFadden Horse Mtn Gully
+  { lat: 33.867269, lon: -110.943174 }, // Cienega Spring
+];
+
+test("bounds contain every source", () => {
+  const b = boundsOf(CORPUS)!;
+  for (const p of CORPUS) {
+    assert.ok(p.lat >= b.south && p.lat <= b.north, `${p.lat} outside ${b.south}..${b.north}`);
+    assert.ok(p.lon >= b.west && p.lon <= b.east, `${p.lon} outside ${b.west}..${b.east}`);
+  }
+});
+
+test("bounds are the tightest box, not padded", () => {
+  const b = boundsOf(CORPUS)!;
+  assert.equal(b.south, 33.398729);
+  assert.equal(b.north, 34.092008);
+  assert.equal(b.west, -111.46653);
+  assert.equal(b.east, -110.935416);
+});
+
+test("no points means no bounds, and nothing to fit", () => {
+  assert.equal(boundsOf([]), null);
+  assert.equal(isWorthFitting(null), false);
+});
+
+test("one point has bounds, but fitting them is not worth it", () => {
+  // Fitting a zero-span box zooms to the tile server's limit and shows grey.
+  const b = boundsOf([{ lat: 34.09059, lon: -111.46653 }])!;
+  assert.equal(b.south, b.north);
+  assert.equal(isWorthFitting(b), false);
+});
+
+test("pins a few hundred metres apart are treated as one place", () => {
+  const b = boundsOf([
+    { lat: 34.09059, lon: -111.46653 },
+    { lat: 34.09159, lon: -111.46753 },
+  ])!;
+  assert.equal(isWorthFitting(b), false);
+});
+
+test("the real corpus is worth fitting — that is the whole bug", () => {
+  // ~90 km across. At the old fixed zoom 12 the Superstitions and McFadden
+  // sources were off-screen with nothing to say so.
+  const b = boundsOf(CORPUS)!;
+  assert.ok(isWorthFitting(b));
+  assert.ok(
+    distanceKm({ lat: b.south, lon: b.west }, { lat: b.north, lon: b.east }) > 80,
+  );
+});
+
+test("order does not change the bounds", () => {
+  assert.deepEqual(boundsOf(CORPUS), boundsOf([...CORPUS].reverse()));
 });
