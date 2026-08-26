@@ -303,3 +303,56 @@ export function collectSources(rows: ImportRow[]): { sources: ResolvedSource[]; 
 
   return { sources: [...byName.values()], errors };
 }
+
+/**
+ * How close a gazetteer feature has to be to a supplied coordinate before the
+ * same name is taken to mean the same water.
+ *
+ * 500 m rather than something tighter because the two are measuring different
+ * things: GNIS records a feature, a hiker records where they filled a bottle,
+ * and along a canyon those legitimately differ by a few hundred metres.
+ * Tighter than the 2 km duplicate-check radius, which asks the looser question
+ * "is there already something here".
+ */
+export const LINK_RADIUS_M = 500;
+
+export type GazetteerCandidate = {
+  feed: string;
+  externalId: string;
+  distanceM: number;
+};
+
+export type GazetteerLink =
+  | { linked: true; gnisId: string | null; osmId: string | null; distanceM: number }
+  | { linked: false; reason: "no-match" | "ambiguous"; candidates: number };
+
+/**
+ * Decide whether an imported source is the gazetteer feature of the same name.
+ *
+ * Name **and** proximity together, and that pairing is what makes it safe. Name
+ * alone is useless here -- GNIS holds 7 features called "Cienega Spring" in
+ * Arizona alone, and 264 "Willow Spring" across the six states. Proximity alone
+ * would fuse a spring with the stock tank it feeds, which is different water
+ * that can fail independently. Together they identify one feature or they
+ * identify none.
+ *
+ * Refuses on more than one candidate rather than taking the nearest. The cost
+ * is asymmetric and unrecoverable in one direction: a missing link means a
+ * source is not yet reconciled with the gazetteer, which is a gap someone can
+ * close later. A wrong link silently asserts that a spring somebody walked to
+ * is a different spring, and nothing downstream would ever contradict it.
+ */
+export function chooseGazetteerLink(candidates: GazetteerCandidate[]): GazetteerLink {
+  if (candidates.length === 0) return { linked: false, reason: "no-match", candidates: 0 };
+  if (candidates.length > 1) {
+    return { linked: false, reason: "ambiguous", candidates: candidates.length };
+  }
+  const [c] = candidates;
+  const isGnis = c.feed.startsWith("USGS GNIS");
+  return {
+    linked: true,
+    gnisId: isGnis ? c.externalId : null,
+    osmId: isGnis ? null : c.externalId,
+    distanceM: c.distanceM,
+  };
+}

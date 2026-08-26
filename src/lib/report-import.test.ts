@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PRECIP_RECORD_START } from "./rubric.ts";
-import { collectSources, isRealDate, parseReportCsv, slugify } from "./report-import.ts";
+import {
+  LINK_RADIUS_M,
+  chooseGazetteerLink,
+  collectSources,
+  isRealDate,
+  parseReportCsv,
+  slugify,
+} from "./report-import.ts";
 
 const TODAY = "2026-08-25";
 const HEADER = "source,lat,lon,date,score,status";
@@ -167,4 +174,54 @@ test("a space instead of a comma between lat and lon shifts every column", () =>
   const { rows, drops } = csv("Garden Seep,34.092008 -111.434932,2026-05-15,0.0,At least along the trail.");
   assert.equal(rows.length, 0);
   assert.equal(drops["unparseable-date"], 1);
+});
+
+// ---------------------------------------------------------------------------
+// chooseGazetteerLink — reconciling an imported source with the gazetteer
+// ---------------------------------------------------------------------------
+
+test("one same-named feature nearby links, and the feed picks the column", () => {
+  // Castersen Seep as it actually is: the GNIS feature sits 15 m from the
+  // coordinate on Jacob's own report.
+  const link = chooseGazetteerLink([
+    { feed: "USGS GNIS DomesticNames", externalId: "24601", distanceM: 15 },
+  ]);
+  assert.equal(link.linked, true);
+  assert.equal(link.linked && link.gnisId, "24601");
+  assert.equal(link.linked && link.osmId, null);
+});
+
+test("an OSM feature lands in osm_id, not gnis_id", () => {
+  const link = chooseGazetteerLink([
+    { feed: "OpenStreetMap", externalId: "node/358637901", distanceM: 40 },
+  ]);
+  assert.equal(link.linked && link.gnisId, null);
+  assert.equal(link.linked && link.osmId, "node/358637901");
+});
+
+test("two same-named features nearby refuse rather than take the nearer", () => {
+  // A wrong link silently asserts a spring is a different spring, and nothing
+  // downstream ever contradicts it. A missing link is a gap someone can close.
+  const link = chooseGazetteerLink([
+    { feed: "USGS GNIS DomesticNames", externalId: "1", distanceM: 30 },
+    { feed: "USGS GNIS DomesticNames", externalId: "2", distanceM: 210 },
+  ]);
+  assert.equal(link.linked, false);
+  assert.equal(!link.linked && link.reason, "ambiguous");
+  assert.equal(!link.linked && link.candidates, 2);
+});
+
+test("no candidate is a plain no-match, not an error", () => {
+  // Garden Seep: GNIS calls it "Garden Spring" 100 m away. Renaming somebody's
+  // water is a judgement, not an import step.
+  const link = chooseGazetteerLink([]);
+  assert.equal(link.linked, false);
+  assert.equal(!link.linked && link.reason, "no-match");
+});
+
+test("the link radius is tighter than the duplicate-check radius", () => {
+  // 500 m vs the picker's 2 km. They ask different questions: "is this the same
+  // feature" against "is there already something out here".
+  assert.equal(LINK_RADIUS_M, 500);
+  assert.ok(LINK_RADIUS_M < 2000);
 });
