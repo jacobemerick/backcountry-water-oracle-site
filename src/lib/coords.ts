@@ -197,3 +197,49 @@ export function slugify(name: string): string {
     .trim()
     .replace(/[\s_-]+/g, "-");
 }
+
+export type Bounds = { south: number; west: number; north: number; east: number };
+
+/**
+ * The tightest box containing every point, or null for none.
+ *
+ * Kept here rather than reaching for Leaflet's `latLngBounds` so the map's
+ * opening view is decided by something testable, and so the caller can ask
+ * whether a fit is even worth doing before loading Leaflet at all.
+ *
+ * No antimeridian handling, deliberately. The corpus is the interior Southwest
+ * (see the CHECK on `gazetteer.state`), and code that pretends to handle a case
+ * it has never seen is worse than code that plainly does not.
+ */
+export function boundsOf(points: LatLon[]): Bounds | null {
+  if (points.length === 0) return null;
+  return points.reduce<Bounds>(
+    (b, p) => ({
+      south: Math.min(b.south, p.lat),
+      west: Math.min(b.west, p.lon),
+      north: Math.max(b.north, p.lat),
+      east: Math.max(b.east, p.lon),
+    }),
+    { south: points[0].lat, west: points[0].lon, north: points[0].lat, east: points[0].lon },
+  );
+}
+
+/**
+ * Whether a box is large enough that fitting to it beats simply centring.
+ *
+ * A single source — or several within a few hundred metres — produces a box so
+ * small that fitting it zooms to the tile server's limit and shows a field of
+ * grey. Below this, centre at the default zoom instead. 500 m rather than zero
+ * because "all the pins are basically one place" is the same situation as "there
+ * is one pin".
+ */
+export const MIN_FIT_SPAN_KM = 0.5;
+
+export function isWorthFitting(bounds: Bounds | null): boolean {
+  if (!bounds) return false;
+  const diagonal = distanceKm(
+    { lat: bounds.south, lon: bounds.west },
+    { lat: bounds.north, lon: bounds.east },
+  );
+  return diagonal >= MIN_FIT_SPAN_KM;
+}

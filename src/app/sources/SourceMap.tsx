@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { Circle, CircleMarker, Map as LeafletMap, Marker } from "leaflet";
-import type { LatLon } from "@/lib/coords";
+import { boundsOf, isWorthFitting, type LatLon } from "@/lib/coords";
 import "leaflet/dist/leaflet.css";
 import styles from "./SourceMap.module.css";
 
@@ -38,6 +38,20 @@ const BASEMAPS = {
       '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map">USGS The National Map</a>',
   },
 } as const;
+
+/**
+ * The view when there is nothing to fit to: one source, or a coordinate the
+ * visitor arrived with. Close enough to read drainages, which is what someone
+ * placing a spring is actually doing.
+ */
+const DEFAULT_ZOOM = 12;
+
+/**
+ * Ceiling on the fitted view. Without it, two sources 600 m apart would open at
+ * the tile server's limit -- and USGS serves to z16, past which Leaflet upscales
+ * into mush.
+ */
+const MAX_FIT_ZOOM = 14;
 
 export function SourceMap({
   sources,
@@ -85,7 +99,7 @@ export function SourceMap({
 
       map = L.map(containerRef.current, { scrollWheelZoom: true }).setView(
         [center.lat, center.lon],
-        12,
+        DEFAULT_ZOOM,
       );
       mapRef.current = map;
 
@@ -113,6 +127,27 @@ export function SourceMap({
             `${s.name}<br><span style="opacity:.7">${s.report_count} report${s.report_count === 1 ? "" : "s"}</span>`,
           );
         markersRef.current.set(s.id, marker);
+      }
+
+      // Open on the whole corpus rather than a fixed zoom around its centroid.
+      // The sources are not one cluster -- the first real import spans the
+      // Mazatzals, the Superstitions and McFadden Horse Mountain, roughly 90 km
+      // apart -- so a fixed zoom showed one group and silently hid the others.
+      //
+      // Skipped when the visitor arrived with a coordinate: they asked for that
+      // place, and pulling the view out to the whole state would be answering a
+      // question they did not ask.
+      const bounds = boundsOf(sources);
+      if (!selected && bounds && isWorthFitting(bounds)) {
+        map.fitBounds(
+          [
+            [bounds.south, bounds.west],
+            [bounds.north, bounds.east],
+          ],
+          // Padding keeps the outermost pins off the edge, where a marker is
+          // half-clipped and reads as cut off rather than as the boundary.
+          { padding: [36, 36], maxZoom: MAX_FIT_ZOOM },
+        );
       }
 
       map.on("click", (e: { latlng: { lat: number; lng: number } }) => {
