@@ -278,5 +278,28 @@ export function collectSources(rows: ImportRow[]): { sources: ResolvedSource[]; 
     bySlug.set(s.slug, s.name);
   }
 
+  // The mirror of the check above, and it was missing until real data walked
+  // into it: one name with two coordinates was refused, but several names at
+  // one coordinate were not. A coordinate repeated to six decimal places --
+  // roughly a tenth of a metre -- across different sources is a paste, not a
+  // survey, and it is the more dangerous direction. A missing coordinate costs
+  // one report; a wrong one correlates a whole source against rain that fell
+  // somewhere else, distorts the pooling neighbourhood, and nothing downstream
+  // ever shows it (#66).
+  const byPoint = new Map<string, string[]>();
+  for (const s of byName.values()) {
+    if (s.lat === null) continue;
+    const key = `${s.lat},${s.lon}`;
+    byPoint.set(key, [...(byPoint.get(key) ?? []), s.name]);
+  }
+  for (const [point, names] of byPoint) {
+    if (names.length > 1) {
+      errors.push(
+        `${names.length} sources share the exact coordinate ${point}: ${names.join(", ")}. ` +
+          `Identical to six decimals is a copy-paste, not a measurement — give each its own.`,
+      );
+    }
+  }
+
   return { sources: [...byName.values()], errors };
 }

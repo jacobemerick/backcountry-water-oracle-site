@@ -123,8 +123,10 @@ test("one name with two coordinates is fatal — the engine would fuse them", ()
 
 test("two names that collide as one slug are refused", () => {
   const { rows } = csv(
+    // Distinct coordinates, so this isolates the slug check from the
+    // shared-coordinate one below.
     "Garden Seep,34.09,-111.46,2025-10-16,1.0,",
-    "Garden  seep!,34.09,-111.46,2025-11-28,0.2,",
+    "Garden  seep!,34.10,-111.47,2025-11-28,0.2,",
   );
   const { errors } = collectSources(rows);
   assert.equal(errors.length, 1);
@@ -134,4 +136,35 @@ test("two names that collide as one slug are refused", () => {
 test("slugs match the ones already in the database", () => {
   assert.equal(slugify("Big Kahuna Falls - Mazatzal Wilderness"), "big-kahuna-falls-mazatzal-wilderness");
   assert.equal(slugify("Castersen Seep"), "castersen-seep");
+});
+
+test("several names at one exact coordinate is fatal — a paste, not a survey", () => {
+  // The real 2026-08 backfill did exactly this: one Mazatzal coordinate ended up
+  // on Hawaiian Mist, Barks Canyon, Bark at Dutchman Crossing and McFadden Horse
+  // Mtn Gully. The last three are 50-77 km away from where their names put them.
+  const { rows } = csv(
+    "Hawaiian Mist,34.087157,-111.444733,2026-06-30,0.0,",
+    "Barks Canyon,34.087157,-111.444733,2026-08-09,0.2,",
+    "McFadden Horse Mtn Gully,34.087157,-111.444733,2026-08-16,0.8,",
+  );
+  const { errors } = collectSources(rows);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /3 sources share the exact coordinate/);
+  assert.match(errors[0], /Hawaiian Mist/);
+});
+
+test("two sources at genuinely different coordinates are fine", () => {
+  const { rows } = csv(
+    "Castersen Seep,34.09059,-111.46653,2026-06-30,0.0,",
+    "Big Kahuna Falls - Mazatzal Wilderness,34.08716,-111.45293,2026-06-30,0.0,",
+  );
+  assert.deepEqual(collectSources(rows).errors, []);
+});
+
+test("a space instead of a comma between lat and lon shifts every column", () => {
+  // How two rows of the real backfill went missing: "34.09 -111.43" is one
+  // field, so `date` reads the score column and the row is refused.
+  const { rows, drops } = csv("Garden Seep,34.092008 -111.434932,2026-05-15,0.0,At least along the trail.");
+  assert.equal(rows.length, 0);
+  assert.equal(drops["unparseable-date"], 1);
 });
