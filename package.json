@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "engine:install": "python3 -m venv services/engine/.venv && services/engine/.venv/bin/pip install -q -r services/engine/requirements.txt && services/engine/.venv/bin/water-forecast --version",
     "db:trail-reference": "node --env-file-if-exists=.env.local scripts/load-trail-reference.mjs",
+    "db:gazetteer": "node --experimental-strip-types --env-file-if-exists=.env.local scripts/load-gazetteer.mjs",
     "import:dry-run": "node --experimental-strip-types --env-file-if-exists=.env.local scripts/dry-run-import.mjs"
   },
   "dependencies": {
