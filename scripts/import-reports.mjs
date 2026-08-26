@@ -25,7 +25,7 @@
 import { readFileSync } from "node:fs";
 import { Pool, neonConfig } from "@neondatabase/serverless";
 import ws from "ws";
-import { collectSources, parseReportCsv } from "../src/lib/report-import.ts";
+import { LINK_RADIUS_M, chooseGazetteerLink, collectSources, parseReportCsv } from "../src/lib/report-import.ts";
 
 neonConfig.webSocketConstructor = ws;
 
@@ -124,6 +124,44 @@ try {
     }
     console.error("  Give a lat/lon in the CSV, or a gnis_id column to disambiguate.");
     process.exit(1);
+  }
+
+  // -------------------------------------------------------------------------
+  // Reconcile the sources that arrived WITH a coordinate
+  // -------------------------------------------------------------------------
+  // Resolving a blank coordinate already records which gazetteer feature it
+  // came from. A source that supplied its own coordinate skipped that path
+  // entirely and reached the database unlinked -- which is how the whole 2026-08
+  // backfill landed with a null gnis_id, Cienega Spring included, sitting 0 m
+  // from its GNIS feature.
+  //
+  // Same identification either way: name AND proximity, refusing on more than
+  // one candidate. See chooseGazetteerLink.
+  for (const s of sources) {
+    if (s.gnisId || s.osmId) continue;
+
+    const { rows: candidates } = await client.query(
+      `SELECT feed, external_id,
+              ST_Distance(geog, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography) m
+         FROM gazetteer
+        WHERE duplicate_of IS NULL
+          AND name IS NOT NULL
+          AND lower(name) = lower($3)
+          AND ST_DWithin(geog, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $4)
+        ORDER BY m`,
+      [s.lat, s.lon, s.name, LINK_RADIUS_M],
+    );
+
+    const link = chooseGazetteerLink(
+      candidates.map((c) => ({ feed: c.feed, externalId: c.external_id, distanceM: Number(c.m) })),
+    );
+    if (link.linked) {
+      s.gnisId = link.gnisId;
+      s.osmId = link.osmId;
+      console.log(`  linked "${s.name}" to ${link.gnisId ? "GNIS" : "OSM"} ${link.gnisId ?? link.osmId} (${Math.round(link.distanceM)} m)`);
+    } else if (link.reason === "ambiguous") {
+      console.log(`  note: "${s.name}" matches ${link.candidates} gazetteer features within ${LINK_RADIUS_M} m — not linked`);
+    }
   }
 
   // -------------------------------------------------------------------------
