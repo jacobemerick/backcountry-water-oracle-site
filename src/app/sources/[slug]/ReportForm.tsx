@@ -1,9 +1,53 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { RUBRIC, RUBRIC_GUIDANCE } from "@/lib/rubric";
-import { MAX_STATUS, todayIso } from "@/lib/reports";
+import { MAX_STATUS, rememberedObservedOn, todayIso } from "@/lib/reports";
+
+/**
+ * Where the last date entered is kept, so that entering a trip's worth of
+ * sources — each one a round trip out to the picker and back to a different
+ * source page, which remounts this form every time — does not mean retyping
+ * the date a dozen times.
+ *
+ * sessionStorage, not localStorage: within a sitting, the last date is almost
+ * certainly the next date, but a week later it is stale, and a stale date that
+ * looks deliberate is exactly the error this form warns hardest about.
+ */
+const OBSERVED_ON_KEY = "bwo.observed_on";
+
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot(): string | null {
+  try {
+    return sessionStorage.getItem(OBSERVED_ON_KEY);
+  } catch {
+    // Private-mode and blocked-storage browsers throw on access. The form works
+    // fine without the convenience.
+    return null;
+  }
+}
+
+/** Nothing is remembered on the server, so the first render matches the markup
+    the server sent and React swaps in the stored date after hydration. */
+function getServerSnapshot(): string | null {
+  return null;
+}
+
+function remember(value: string) {
+  try {
+    sessionStorage.setItem(OBSERVED_ON_KEY, value);
+  } catch {
+    /* see getSnapshot */
+  }
+  for (const listener of listeners) listener();
+}
 
 export function ReportForm({
   slug,
@@ -19,7 +63,11 @@ export function ReportForm({
   const router = useRouter();
   const today = todayIso();
 
-  const [observedOn, setObservedOn] = useState(today);
+  const remembered = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  // Typing in the field wins over the store for the rest of this form's life,
+  // so a deliberate date is never overwritten by a later write from elsewhere.
+  const [edited, setEdited] = useState<string | null>(null);
+  const observedOn = edited ?? rememberedObservedOn(remembered, today);
   const [score, setScore] = useState<number | null>(null);
   const [status, setStatus] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -27,6 +75,11 @@ export function ReportForm({
   const [done, setDone] = useState<{ warnings: string[] } | null>(null);
 
   const remaining = minForVerdict - reportCount;
+
+  function onDateChange(value: string) {
+    setEdited(value);
+    remember(value);
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -109,9 +162,17 @@ export function ReportForm({
           required
           max={today}
           value={observedOn}
-          onChange={(e) => setObservedOn(e.target.value)}
+          onChange={(e) => onDateChange(e.target.value)}
           className="mt-2 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-accent"
         />
+        {/* A date carried over from the last entry must never be silent — a
+            field that quietly disagrees with today is worth one line of
+            explanation, or the convenience becomes the trap. */}
+        {observedOn !== today && (
+          <p className="mt-2 text-sm text-muted">
+            Held from your last report this session. Change it if this one is from a different day.
+          </p>
+        )}
       </div>
 
       <fieldset>
