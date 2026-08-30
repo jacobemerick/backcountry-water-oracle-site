@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { RUBRIC } from "./rubric.ts";
 import {
   FRESHNESS_NOTE,
+  RECORD_COPY,
+  digestRecord,
   flowLabel,
   MIN_REPORTS_FOR_VERDICT,
   SMALL_N_THRESHOLD,
@@ -138,4 +140,80 @@ test("ties round down, toward less water", () => {
   assert.equal(flowLabel(0.5), "Trickle");
   assert.equal(flowLabel(0.7), "Moderate");
   assert.equal(flowLabel(0.9), "Strong");
+});
+
+const obs = (date: string, score: number) => ({ date, score, source: "x", lat: 0, lon: 0, status: null });
+
+test("digestRecord summarises a record the site refuses to read", () => {
+  const d = digestRecord([
+    obs("2019-04-02", 0.6),
+    obs("2024-03-11", 0.2),
+    obs("2021-06-30", 1.0),
+  ]);
+  assert.ok(d);
+  assert.equal(d.n, 3);
+  // Unsorted input: the page must not depend on query order for "most recent".
+  assert.equal(d.first, "2019-04-02");
+  assert.equal(d.last, "2024-03-11");
+  assert.equal(d.latest.label, "Pools or dripping");
+  assert.equal(d.driest, "Pools or dripping");
+  assert.equal(d.wettest, "Raging");
+  assert.equal(d.uniform, false);
+  assert.equal(d.everDry, false);
+});
+
+test("digestRecord flags a source somebody found dry", () => {
+  // The one fact in a thin record that changes what you carry, so it does not
+  // get averaged into a range.
+  const d = digestRecord([obs("2023-05-01", 0.0), obs("2024-05-01", 0.8)]);
+  assert.ok(d);
+  assert.equal(d.everDry, true);
+  assert.equal(d.uniform, false);
+  assert.equal(digestRecord([obs("2024-05-01", 0.2)])?.everDry, false);
+});
+
+test("digestRecord reports a uniform record as uniform", () => {
+  const d = digestRecord([obs("2023-05-01", 0.6), obs("2024-05-01", 0.6)]);
+  assert.ok(d);
+  assert.equal(d.uniform, true);
+  assert.equal(d.driest, d.wettest);
+});
+
+test("digestRecord has nothing to say about an empty record", () => {
+  assert.equal(digestRecord([]), null);
+});
+
+test("the dry warning fires where it adds something, and stays quiet where it repeats", () => {
+  const mixed = digestRecord([obs("2023-05-01", 0.0), obs("2024-05-01", 0.8)])!;
+  assert.match(RECORD_COPY.everDry(mixed) ?? "", /completely dry/);
+  // A record that reads wet is exactly the case the warning exists for.
+  assert.equal(RECORD_COPY.everDry(digestRecord([obs("2024-05-01", 0.8)])!), null);
+  // One observation, already stated twice on the page. A third copy is noise.
+  assert.equal(RECORD_COPY.everDry(digestRecord([obs("2024-05-01", 0.0)])!), null);
+});
+
+test("the record summary is dated and past tense, never a verdict", () => {
+  const one = RECORD_COPY.summary(digestRecord([obs("2026-06-05", 0.6)])!, TODAY);
+  const many = RECORD_COPY.summary(
+    digestRecord([obs("2019-04-02", 0.6), obs("2026-06-05", 0.2), obs("2021-06-30", 1.0)])!,
+    TODAY,
+  );
+  const uniform = RECORD_COPY.summary(
+    digestRecord([obs("2019-04-02", 0.4), obs("2026-06-05", 0.4)])!,
+    TODAY,
+  );
+
+  for (const sentence of [one, many, uniform]) {
+    // Every claim is pinned to a date, so none of them can be read as a
+    // statement about what is there today.
+    assert.match(sentence, /\d{4}-\d{2}-\d{2}|ago/);
+    // The words a verdict would use. This page issues no verdict, and the
+    // summary must not become one by accident.
+    assert.doesNotMatch(sentence, /\b(is|will|should|likely|expect|probably|running)\b/i);
+  }
+
+  assert.match(one, /One observation/);
+  assert.match(uniform, /every one trickle/);
+  assert.match(many, /ranging from pools or dripping to raging/);
+  assert.match(many, /2 months ago/);
 });

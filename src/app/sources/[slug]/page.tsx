@@ -19,6 +19,7 @@ import {
   WhyThisRead,
 } from "@/components/SourceRead";
 import { ReadUnavailable, ThinSourceSheet } from "@/components/ThinSourceSheet";
+import { ReportHistory } from "@/components/ReportHistory";
 import { ReportForm } from "./ReportForm";
 
 export const dynamic = "force-dynamic";
@@ -138,6 +139,11 @@ export default async function SourcePage({ params }: Props) {
         <div className="py-8">
           <h1 className="hydro-display text-3xl sm:text-4xl">{source.name}</h1>
           <p className="value mt-2 text-sm text-muted">{formatLatLon(source)}</p>
+          {/* Freshness belongs here more than on the read page, not less: with
+              no verdict to qualify, how old the record is *is* the information. */}
+          <div className="mt-3">
+            <FreshnessTag lastReported={lastReported} />
+          </div>
           <p className="mt-3 max-w-2xl text-sm text-muted">
             How this site decides what it can and cannot say —{" "}
             <Link
@@ -157,6 +163,7 @@ export default async function SourcePage({ params }: Props) {
         ) : (
           <ThinSourceSheet
             reportCount={rows.length}
+            rows={rows}
             neighbours={neighbourList}
             engineError={engineError}
           >
@@ -164,21 +171,12 @@ export default async function SourcePage({ params }: Props) {
           </ThinSourceSheet>
         )}
 
-        {rows.length > 0 && (
+        {/* The thin sheet renders the record itself, in place. This is only for
+            the engine-failure shape, which has plenty of record and no read. */}
+        {enoughReports && rows.length > 0 && (
           <section className="mt-10">
             <BlockLabel>Report history ({rows.length})</BlockLabel>
-            <ul className="mt-4 divide-y divide-border overflow-hidden rounded-lg border border-border">
-              {[...rows].reverse().map((r, i) => (
-                <li
-                  key={`${r.date}-${i}`}
-                  className="flex flex-wrap items-baseline gap-x-4 gap-y-1 bg-surface px-4 py-2.5"
-                >
-                  <span className="value text-sm">{r.date}</span>
-                  <span className="value text-sm text-accent">{r.score.toFixed(1)}</span>
-                  {r.status && <span className="text-sm text-muted">{r.status}</span>}
-                </li>
-              ))}
-            </ul>
+            <ReportHistory rows={rows} />
           </section>
         )}
       </SiteShell>
@@ -259,18 +257,7 @@ export default async function SourcePage({ params }: Props) {
         {rows.length > 0 && (
           <section className="lg:col-start-1">
             <BlockLabel>Report history ({rows.length})</BlockLabel>
-            <ul className="mt-4 divide-y divide-border overflow-hidden rounded-lg border border-border">
-              {[...rows].reverse().map((r, i) => (
-                <li
-                  key={`${r.date}-${i}`}
-                  className="flex flex-wrap items-baseline gap-x-4 gap-y-1 bg-surface px-4 py-2.5"
-                >
-                  <span className="value text-sm">{r.date}</span>
-                  <span className="value text-sm text-accent">{r.score.toFixed(1)}</span>
-                  {r.status && <span className="text-sm text-muted">{r.status}</span>}
-                </li>
-              ))}
-            </ul>
+            <ReportHistory rows={rows} />
           </section>
         )}
 
