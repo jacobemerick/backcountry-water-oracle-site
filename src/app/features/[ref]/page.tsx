@@ -6,8 +6,10 @@ import {
   findSourceByExternalId,
   gazetteerFeatureById,
   sourcesNear,
+  sourcesNearFeature,
 } from "@/lib/db";
-import type { GazetteerFeature } from "@/lib/db";
+import type { FeatureSourceMatch, GazetteerFeature } from "@/lib/db";
+import { LINK_RADIUS_M } from "@/lib/report-import";
 import { getSeries } from "@/lib/precip";
 import { RAIN_COPY, bandOf, rankAntecedentRain } from "@/lib/rain-percentile";
 import type { RainPercentile } from "@/lib/rain-percentile";
@@ -113,6 +115,36 @@ export default async function FeaturePage({ params }: Props) {
   );
   if (promoted) redirect(`/sources/${promoted.slug}`);
 
+  /*
+   * The identifier is only ever written by an import or by promotion. A source
+   * somebody pinned by hand carries none — and on the live corpus that is most
+   * of them: 35 of 57 sources sit within 500 m of an unlinked gazetteer
+   * feature, same-named and 0–4 m away in most cases. Without this check every
+   * one of those springs has two live URLs, one of them insisting nobody has
+   * ever reported water that has in fact been reported.
+   *
+   * So the same question the importer asks gets asked here: same name, within
+   * LINK_RADIUS_M, refusing on more than one candidate. One match is this
+   * feature and the reports are the better page.
+   */
+  const candidates = await sourcesNearFeature(
+    feature.lat,
+    feature.lon,
+    feature.name,
+    LINK_RADIUS_M,
+  );
+  const named = candidates.filter((c) => c.name_matches);
+  if (named.length === 1) redirect(`/sources/${named[0].slug}`);
+
+  /*
+   * Everything else within the radius is shown, not resolved. This is the
+   * Garden Seep case #76 refused: GNIS calls it "Garden Spring" 100 m away, and
+   * deciding those are the same water is a judgement a person makes, not one a
+   * redirect makes silently. Two same-named candidates land here too — the
+   * ambiguity the import rule exists to refuse.
+   */
+  const unresolved: FeatureSourceMatch[] = named.length > 1 ? named : candidates;
+
   const neighbours = await sourcesNear(feature.lat, feature.lon, 25);
   const reported = neighbours.find((n) => n.report_count >= MIN_REPORTS_FOR_VERDICT);
   const nearest = neighbours[0] ?? null;
@@ -163,6 +195,33 @@ export default async function FeaturePage({ params }: Props) {
             there is nothing to forecast from.
           </p>
         </div>
+
+        {unresolved.length > 0 && (
+          <section>
+            <p className="collar-label text-warn">This may already be recorded</p>
+            <p className="mt-3 max-w-2xl leading-relaxed text-muted">
+              {unresolved.length === 1 ? "A source is" : `${unresolved.length} sources are`} recorded
+              within {LINK_RADIUS_M} m of this feature under
+              {unresolved.length === 1 ? " a different name" : " these names"}. The site will not
+              decide whether that is this water — a spring and the stock tank it feeds sit close
+              together and fail independently — so this is yours to judge.
+            </p>
+            <ul className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border">
+              {unresolved.map((c) => (
+                <li key={c.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 bg-surface px-4 py-3">
+                  <Link href={`/sources/${c.slug}`} className="hydro-inline">
+                    {c.name}
+                  </Link>
+                  <span className="value text-xs text-accent">{Math.round(c.distance_m)} m away</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+              If one of those is this feature, report there. Splitting one spring across two
+              entries halves both records, and neither reaches a read.
+            </p>
+          </section>
+        )}
 
         {rain && (
           <section>

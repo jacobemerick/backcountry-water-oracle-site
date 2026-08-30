@@ -311,3 +311,35 @@ export async function findSourceByExternalId(
       : ((await sql`SELECT id::int AS id, name, slug, lat, lon FROM sources WHERE osm_id = ${externalId}`) as Source[]);
   return rows[0] ?? null;
 }
+
+export type FeatureSourceMatch = Source & { distance_m: number; name_matches: boolean };
+
+/**
+ * Sources that might already be this gazetteer feature.
+ *
+ * The same question `scripts/import-reports.mjs` asks at import time, asked at
+ * read time — because the identifier link is only ever written by an import or
+ * by promotion, and a source somebody pinned by hand carries no identifier at
+ * all. Measured on the live corpus: 35 of 57 sources sit within 500 m of an
+ * unlinked gazetteer feature, 0–4 m and same-named in most cases. Without this,
+ * every one of those springs has two live URLs saying opposite things.
+ *
+ * Returns candidates rather than a verdict; `chooseGazetteerLink`'s rule —
+ * name and proximity together, refusing on ambiguity — decides.
+ */
+export async function sourcesNearFeature(
+  lat: number,
+  lon: number,
+  name: string | null,
+  radiusM: number,
+): Promise<FeatureSourceMatch[]> {
+  const sql = db();
+  return (await sql`
+    SELECT id::int AS id, s.name, slug, lat, lon,
+           ST_Distance(geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography) AS distance_m,
+           (${name}::text IS NOT NULL AND lower(s.name) = lower(${name})) AS name_matches
+    FROM sources s
+    WHERE ST_DWithin(geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, ${radiusM})
+    ORDER BY distance_m
+  `) as FeatureSourceMatch[];
+}
