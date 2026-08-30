@@ -114,11 +114,17 @@ export async function createSource(input: {
   lat: number;
   lon: number;
   notes?: string | null;
+  /* Promotion: the gazetteer identifier this source came from, so the two never
+     drift into a second point for one spring and the gazetteer stays reloadable
+     wholesale. Null for a source somebody pinned themselves. */
+  gnisId?: string | null;
+  osmId?: string | null;
 }): Promise<Source> {
   const sql = db();
   const rows = (await sql`
-    INSERT INTO sources (name, slug, lat, lon, notes)
-    VALUES (${input.name}, ${input.slug}, ${input.lat}, ${input.lon}, ${input.notes ?? null})
+    INSERT INTO sources (name, slug, lat, lon, notes, gnis_id, osm_id)
+    VALUES (${input.name}, ${input.slug}, ${input.lat}, ${input.lon}, ${input.notes ?? null},
+            ${input.gnisId ?? null}, ${input.osmId ?? null})
     RETURNING id::int AS id, name, slug, lat, lon
   `) as Source[];
   return rows[0];
@@ -243,4 +249,65 @@ export async function recordFetchAttempt(input: {
        ${input.byteSize ?? null}, ${input.durationMs ?? null}, ${input.error ?? null},
        ${input.snapshotId ?? null})
   `;
+}
+
+export type GazetteerFeature = {
+  id: number;
+  feed: string;
+  licence: string;
+  external_id: string;
+  name: string | null;
+  feature_class: string;
+  raw_class: string | null;
+  state: string;
+  county: string | null;
+  lat: number;
+  lon: number;
+  duplicate_of: number | null;
+};
+
+/** One feature, by the identifier its URL carries. */
+export async function findGazetteerFeature(
+  feed: string,
+  externalId: string,
+): Promise<GazetteerFeature | null> {
+  const sql = db();
+  const rows = (await sql`
+    SELECT id::int AS id, feed, licence, external_id, name, feature_class, raw_class,
+           state, county, lat, lon, duplicate_of::int AS duplicate_of
+    FROM gazetteer
+    WHERE feed = ${feed} AND external_id = ${externalId}
+  `) as GazetteerFeature[];
+  return rows[0] ?? null;
+}
+
+export async function gazetteerFeatureById(id: number): Promise<GazetteerFeature | null> {
+  const sql = db();
+  const rows = (await sql`
+    SELECT id::int AS id, feed, licence, external_id, name, feature_class, raw_class,
+           state, county, lat, lon, duplicate_of::int AS duplicate_of
+    FROM gazetteer
+    WHERE id = ${id}
+  `) as GazetteerFeature[];
+  return rows[0] ?? null;
+}
+
+/**
+ * The promotion check: has this feature already been reported on?
+ *
+ * Matched on the feed's own identifier rather than on name or proximity.
+ * `sources.gnis_id` / `osm_id` are copied across at promotion for exactly this,
+ * and it is the only join that stays correct when somebody later renames the
+ * source or nudges its coordinate.
+ */
+export async function findSourceByExternalId(
+  column: "gnis_id" | "osm_id",
+  externalId: string,
+): Promise<Source | null> {
+  const sql = db();
+  const rows =
+    column === "gnis_id"
+      ? ((await sql`SELECT id::int AS id, name, slug, lat, lon FROM sources WHERE gnis_id = ${externalId}`) as Source[])
+      : ((await sql`SELECT id::int AS id, name, slug, lat, lon FROM sources WHERE osm_id = ${externalId}`) as Source[]);
+  return rows[0] ?? null;
 }

@@ -16,9 +16,17 @@ export default async function SourcesPage({ searchParams }: PageProps<"/sources"
   // ?at=<coordinate> comes from the search field's "add it", so a coordinate
   // typed on the home page is not typed a second time here. Parsed with the
   // same parser as everything else — there is exactly one coordinate reader.
-  const at = (await searchParams).at;
+  const query = await searchParams;
+  const at = query.at;
   const parsedAt = typeof at === "string" ? parseLatLon(at) : null;
   const initialPoint = parsedAt?.ok ? parsedAt.value : null;
+
+  // ?name= and ?feature= come from a gazetteer feature page's "be the first to
+  // report this". The feature ref is carried, not resolved here: the API
+  // re-reads it against the gazetteer, so a hand-edited value cannot attach a
+  // feed identifier to the wrong water.
+  const initialName = typeof query.name === "string" ? query.name.slice(0, 120) : "";
+  const featureRef = typeof query.feature === "string" ? query.feature : null;
 
   let sources: Awaited<ReturnType<typeof listSourcesWithCounts>> = [];
   let error: string | null = null;
@@ -59,6 +67,8 @@ export default async function SourcesPage({ searchParams }: PageProps<"/sources"
         <SourcePicker
           id="add"
           initialPoint={initialPoint}
+          initialName={initialName}
+          featureRef={featureRef}
           sources={sources.map((s) => ({
             id: s.id,
             name: s.name,
