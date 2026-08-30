@@ -89,3 +89,30 @@ export function validateReport(input: ReportInput, today = todayIso()): Validati
     warnings,
   };
 }
+
+/**
+ * The date a returning form should open on, given whatever was last entered in
+ * this browsing session.
+ *
+ * Backfilling a trip means entering a dozen sources against one date, and the
+ * date field defaulting to today every time is a dozen chances to record a
+ * report against the wrong day — the one error the engine cannot detect, since
+ * a plausible date correlates against real rainfall and quietly produces a
+ * wrong answer. Carrying the last date forward is the safer default as well as
+ * the faster one.
+ *
+ * Anything unusable falls back to today rather than throwing: a remembered
+ * date is a convenience, and a corrupt one must never block the form.
+ */
+export function rememberedObservedOn(stored: string | null | undefined, today = todayIso()): string {
+  if (typeof stored !== "string" || !ISO_DATE.test(stored)) return today;
+  const parsed = new Date(`${stored}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== stored) return today;
+  // A session held open across midnight would otherwise reopen on a date the
+  // form itself rejects as future.
+  if (stored > today) return today;
+  // A year typo (0202-08-14 parses fine) is the likely source of anything this
+  // old, and reopening on it would carry the typo into every later report.
+  if (stored < PRECIP_RECORD_START) return today;
+  return stored;
+}

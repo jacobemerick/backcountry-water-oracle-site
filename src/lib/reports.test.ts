@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_STATUS, todayIso, validateReport } from "./reports.ts";
+import { MAX_STATUS, rememberedObservedOn, todayIso, validateReport } from "./reports.ts";
 import { PRECIP_LAG_DAYS, PRECIP_RECORD_START, RUBRIC, isRubricScore, nearestStep } from "./rubric.ts";
 
 const TODAY = "2026-08-05";
@@ -139,4 +139,34 @@ test("nearestStep maps interpolated import scores onto the scale", () => {
 test("todayIso is a plain ISO date", () => {
   assert.match(todayIso(), /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(todayIso(new Date("2026-08-05T23:30:00Z")), "2026-08-05");
+});
+
+test("rememberedObservedOn carries a usable date forward", () => {
+  // The point of the whole thing: a backfill session keeps its date.
+  assert.equal(rememberedObservedOn("2026-06-01", TODAY), "2026-06-01");
+  assert.equal(rememberedObservedOn(TODAY, TODAY), TODAY);
+});
+
+test("rememberedObservedOn falls back to today rather than reopening on a bad date", () => {
+  assert.equal(rememberedObservedOn(null, TODAY), TODAY);
+  assert.equal(rememberedObservedOn("", TODAY), TODAY);
+  assert.equal(rememberedObservedOn("yesterday", TODAY), TODAY);
+  assert.equal(rememberedObservedOn("2026-6-1", TODAY), TODAY);
+  // Real-looking but impossible, the same case validateReport rejects.
+  assert.equal(rememberedObservedOn("2026-02-31", TODAY), TODAY);
+  // A session held open past midnight must not reopen on a future date, which
+  // the form itself would refuse.
+  assert.equal(rememberedObservedOn("2026-08-06", TODAY), TODAY);
+  // Year typo.
+  assert.equal(rememberedObservedOn("0202-08-01", TODAY), TODAY);
+});
+
+test("every date rememberedObservedOn hands back is one validateReport accepts", () => {
+  for (const stored of [null, "", "2026-06-01", "2026-02-31", "2026-08-06", "0202-08-01", "nonsense"]) {
+    const date = rememberedObservedOn(stored, TODAY);
+    const r = validateReport({ ...valid, observedOn: date }, TODAY);
+    // Warnings are fine — today itself carries the rainfall-lag notice. What
+    // must never happen is the form opening on a date its own POST rejects.
+    assert.ok(r.ok, `${stored} produced ${date}, which the form would reject`);
+  }
 });
