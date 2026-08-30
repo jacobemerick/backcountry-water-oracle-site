@@ -241,3 +241,114 @@ export function describeAge(lastReported: string | null, today = new Date()): st
   if (months < 24) return `${months} month${months === 1 ? "" : "s"} ago`;
   return `${Math.round(days / 365.25)} years ago`;
 }
+
+/**
+ * What a source's own observations say, for a page that is not issuing a read.
+ *
+ * Below the floor the site refuses a verdict, and until now that refusal *was*
+ * the page: two blocks explaining what cannot be said, with the observations
+ * themselves pushed below the form as a bare list of dates and bare decimals.
+ * That is a page sitting on real field data and leading with its absence.
+ *
+ * A record is not a forecast, so everything here is past tense and dated. It
+ * describes what people found on particular days; it never says what is there
+ * now. The whole design of the thin-source page rests on that line not being
+ * crossed, so the summary must not be composable into a present-tense claim.
+ */
+export type RecordDigest = {
+  n: number;
+  /** Earliest and most recent observation dates. */
+  first: string;
+  last: string;
+  /** The most recent observation — the single most decision-relevant row. */
+  latest: { date: string; score: number; label: string };
+  /** Range across the record, in rubric words. Equal when every row agrees. */
+  driest: string;
+  wettest: string;
+  /** Every observation landed on the same rubric step. */
+  uniform: boolean;
+  /**
+   * Somebody found this completely dry at least once.
+   *
+   * Surfaced on its own rather than left to the range, because it is the one
+   * fact in a thin record that changes what you carry. A source that has been
+   * dry can be dry again, and averaging that into "Dry to Strong" buries it.
+   */
+  everDry: boolean;
+};
+
+export function digestRecord(
+  rows: readonly { date: string; score: number }[],
+): RecordDigest | null {
+  if (rows.length === 0) return null;
+
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+  const latest = sorted[sorted.length - 1];
+  const scores = sorted.map((r) => r.score);
+  const driest = nearestStep(Math.min(...scores));
+  const wettest = nearestStep(Math.max(...scores));
+
+  return {
+    n: sorted.length,
+    first: sorted[0].date,
+    last: latest.date,
+    latest: { date: latest.date, score: latest.score, label: nearestStep(latest.score).label },
+    driest: driest.label,
+    wettest: wettest.label,
+    uniform: driest.label === wettest.label,
+    everDry: scores.some((s) => s <= 0),
+  };
+}
+
+export const RECORD_COPY = {
+  /**
+   * The record in one sentence.
+   *
+   * Every clause is anchored to a date, and there is no verb about the present.
+   * "Reported Moderate on 2024-03-11" is a fact; "runs moderate" would be a
+   * verdict the record cannot support, and this page exists to not issue one.
+   */
+  summary(d: RecordDigest, today = new Date()): string {
+    const age = describeAge(d.last, today);
+
+    if (d.n === 1) {
+      return `One observation, ${age}: ${d.latest.label.toLowerCase()} on ${d.latest.date}.`;
+    }
+    if (d.uniform) {
+      return (
+        `${d.n} observations between ${d.first} and ${d.last}, every one ` +
+        `${d.driest.toLowerCase()}. The most recent was ${age}.`
+      );
+    }
+    return (
+      `${d.n} observations between ${d.first} and ${d.last}, ranging from ` +
+      `${d.driest.toLowerCase()} to ${d.wettest.toLowerCase()}. Most recently ` +
+      `${d.latest.label.toLowerCase()}, ${age}.`
+    );
+  },
+
+  /**
+   * Said plainly, or not at all.
+   *
+   * Only where it adds something: the case this exists for is a record that
+   * reads wet overall and contains one zero, which the range alone buries. On a
+   * single-observation source the summary sentence directly above already says
+   * "dry" and the list below says it again — a third copy in a warning box is
+   * noise, and noise is what makes real warnings skippable.
+   */
+  everDry(d: RecordDigest): string | null {
+    if (!d.everDry || d.n < 2) return null;
+    return (
+      "Somebody found this completely dry. A source that has been dry can be dry again, " +
+      "whatever the rest of the record says."
+    );
+  },
+
+  /**
+   * The frame the list sits in. Without it a table of dates and scores on a
+   * page that refuses a verdict invites exactly the reading the refusal is
+   * there to prevent — that the numbers add up to an answer.
+   */
+  framing:
+    "These are the observations themselves, not a forecast. Too few to correlate against rainfall, but they are what people actually found.",
+} as const;

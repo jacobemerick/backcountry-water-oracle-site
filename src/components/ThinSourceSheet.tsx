@@ -1,6 +1,8 @@
 import Link from "next/link";
+import type { EngineRow } from "@/lib/engine-csv";
 import { MIN_REPORTS_FOR_VERDICT, THRESHOLD_COPY } from "@/lib/present";
 import { formatDistance } from "@/lib/coords";
+import { RecordSoFar } from "./ReportHistory";
 
 export type Neighbour = {
   id: number;
@@ -26,11 +28,14 @@ export type Neighbour = {
  */
 export function ThinSourceSheet({
   reportCount,
+  rows,
   neighbours,
   engineError,
   children,
 }: {
   reportCount: number;
+  /** This source's own observations, ordered by date. */
+  rows: readonly EngineRow[];
   /** Everything inside the pooling radius, nearest first. */
   neighbours: Neighbour[];
   engineError?: string | null;
@@ -57,6 +62,17 @@ export function ThinSourceSheet({
           {THRESHOLD_COPY.noRead(reportCount)}
         </p>
       </div>
+
+      {/*
+        The record, before the explanation of why it is not enough.
+
+        Order is the whole point of this block. The page used to open with two
+        consecutive statements of what it cannot say and put the observations
+        below the form, which describes a page with no data — when in fact
+        every source on this site currently has some. What people found comes
+        first; why it does not add up to a read comes second.
+      */}
+      <RecordSoFar rows={rows} />
 
       <section>
         <p className="collar-label text-muted">Why</p>
