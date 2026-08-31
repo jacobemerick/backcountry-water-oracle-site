@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatDistance, formatLatLon, parseLatLon, type LatLon } from "@/lib/coords";
 
@@ -15,14 +15,47 @@ import { formatDistance, formatLatLon, parseLatLon, type LatLon } from "@/lib/co
  * Deliberately map-free. This renders on the home page, where mounting Leaflet
  * would be a few hundred kilobytes spent on a component the page does not show
  * — and "near me" needs geolocation, not a map.
+ *
+ * ## Two kinds of answer, kept apart
+ *
+ * A **source** has observations behind it. A **feature** is a name on a map
+ * from USGS or OSM that nobody has reported on. Merging them into one ranked
+ * list would put a spring nobody has ever visited next to one with a decade of
+ * reports, sorted by spelling — so they are separate groups, sources first.
+ *
+ * Searching moved to the server in the same change. This component used to
+ * fetch the entire corpus on first focus and substring-match it in the browser,
+ * which was right at four sources and cannot see the gazetteer at all.
  */
 
-type Row = {
+type SourceHit = {
+  kind: "source";
   slug: string;
   name: string;
   report_count: number;
-  /** Present only for proximity results. */
-  distance_km?: number;
+  last_reported: string | null;
+  distance_km: number | null;
+};
+
+type FeatureHit = {
+  kind: "feature";
+  path: string | null;
+  name: string | null;
+  feature_class: string;
+  county: string | null;
+  state: string;
+  distance_km: number | null;
+};
+
+type Hit = SourceHit | FeatureHit;
+
+type Results = {
+  sources: SourceHit[];
+  features: FeatureHit[];
+  feature_total: number;
+  fuzzy: boolean;
+  /** Only meaningful for a coordinate lookup: does the gazetteer reach here. */
+  covered: boolean | null;
 };
 
 type Mode =
@@ -39,7 +72,18 @@ type Mode =
  */
 const LOOKUP_RADIUS_KM = 25;
 
-const MAX_RESULTS = 8;
+/** The six states the gazetteer covers, as `gazetteer.state`'s CHECK spells
+    them. Named here only to say the scope out loud when a search falls outside
+    it — "not found" and "not covered" are different sentences. */
+const COVERAGE = "Arizona, California, Colorado, Nevada, New Mexico and Utah";
+
+function featureLabel(f: FeatureHit): string {
+  return f.name ?? `Unnamed ${f.feature_class.replace(/_/g, " ")}`;
+}
+
+function featureWhere(f: FeatureHit): string {
+  return f.county ? `${f.county} County, ${f.state}` : f.state;
+}
 
 export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
   const router = useRouter();
@@ -50,33 +94,11 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
   const [activeRaw, setActive] = useState(0);
   const [open, setOpen] = useState(false);
 
-  const [corpus, setCorpus] = useState<Row[] | null>(null);
-  const [corpusError, setCorpusError] = useState<string | null>(null);
-
-  const [proximity, setProximity] = useState<{ key: string; rows: Row[] } | null>(null);
+  const [results, setResults] = useState<{ key: string; data: Results } | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [nearPoint, setNearPoint] = useState<LatLon | null>(null);
-
-  const corpusRequested = useRef(false);
-
-  /** Fetched once, on first focus. The home page should not pay for a lookup
-      nobody has asked for, and the corpus is small enough that substring
-      matching in the browser beats a round trip per keystroke. */
-  const loadCorpus = useCallback(async () => {
-    if (corpusRequested.current) return;
-    corpusRequested.current = true;
-    try {
-      const res = await fetch("/api/sources");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not load sources.");
-      setCorpus(data.sources ?? []);
-      setCorpusError(null);
-    } catch (e) {
-      setCorpusError(e instanceof Error ? e.message : "Could not load sources.");
-      setCorpus([]);
-    }
-  }, []);
 
   const parsed = useMemo(() => (query.trim() ? parseLatLon(query) : null), [query]);
 
@@ -91,59 +113,60 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
 
   /**
    * The request URL doubles as the identity of its own result. Keying the
-   * cached rows this way means a stale point's results are simply not the
+   * cached rows this way means a stale query's results are simply not the
    * current ones — no effect has to reach back and clear them, which is what
    * the lint rule against synchronous setState in an effect is protecting.
    */
-  const nearbyUrl = point
-    ? `/api/sources/nearby?lat=${point.lat}&lon=${point.lon}&radius_km=${LOOKUP_RADIUS_KM}`
-    : null;
+  const searchUrl =
+    mode.kind === "idle"
+      ? null
+      : point
+        ? `/api/search?lat=${point.lat}&lon=${point.lon}`
+        : `/api/search?q=${encodeURIComponent(mode.kind === "name" ? mode.query : "")}`;
 
   // Debounced and aborted on change, so a fast typist does not queue a request
-  // per digit. setBusy lives inside the timer rather than the effect body for
-  // the same reason it does in SourcePicker: a synchronous setState here
-  // cascades a render, and it also stops the spinner flickering on every key.
+  // per keystroke. setBusy lives inside the timer rather than the effect body:
+  // a synchronous setState here cascades a render, and it also stops the
+  // spinner flickering on every key.
   useEffect(() => {
-    if (!nearbyUrl) return;
+    if (!searchUrl) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setBusy(true);
       try {
-        const res = await fetch(nearbyUrl, { signal: controller.signal });
+        const res = await fetch(searchUrl, { signal: controller.signal });
         const data = await res.json();
-        setProximity({ key: nearbyUrl, rows: res.ok ? (data.sources ?? []) : [] });
-      } catch {
-        if (!controller.signal.aborted) setProximity({ key: nearbyUrl, rows: [] });
+        if (!res.ok) throw new Error(data.error ?? "Search failed.");
+        setResults({ key: searchUrl, data });
+        setError(null);
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          setError(e instanceof Error ? e.message : "Search failed.");
+        }
       } finally {
         if (!controller.signal.aborted) setBusy(false);
       }
-    }, 300);
+    }, 250);
 
     return () => {
       controller.abort();
       clearTimeout(timer);
       setBusy(false);
     };
-  }, [nearbyUrl]);
+  }, [searchUrl]);
 
-  const proximityRows = proximity && proximity.key === nearbyUrl ? proximity.rows : null;
+  const current = results && results.key === searchUrl ? results.data : null;
 
-  const results: Row[] = useMemo(() => {
-    if (mode.kind === "name") {
-      const needle = mode.query.toLowerCase();
-      return (corpus ?? [])
-        .filter((s) => s.name.toLowerCase().includes(needle))
-        .slice(0, MAX_RESULTS);
-    }
-    if (mode.kind === "coords" || mode.kind === "near") {
-      return (proximityRows ?? []).slice(0, MAX_RESULTS);
-    }
-    return [];
-  }, [mode, corpus, proximityRows]);
+  // Flat for keyboard navigation, grouped for the eye. Sources first: a page
+  // with observations behind it beats a name on a map, always.
+  const hits: Hit[] = useMemo(
+    () => (current ? [...current.sources, ...current.features] : []),
+    [current],
+  );
 
   // Clamped during render rather than reset from an effect. The highlighted row
   // is a view of the current results, so it is derived, not synchronised.
-  const active = results.length ? Math.min(activeRaw, results.length - 1) : 0;
+  const active = hits.length ? Math.min(activeRaw, hits.length - 1) : 0;
 
   /** Where "add it" goes: the picker, pre-aimed, rather than a second copy of
       the duplicate-prevention logic this component has no business owning. */
@@ -151,11 +174,16 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
     ? `/sources?at=${point.lat.toFixed(6)},${point.lon.toFixed(6)}#add`
     : "/sources#add";
 
-  const settled = mode.kind === "name" ? corpus !== null : proximityRows !== null && !busy;
-  const empty = settled && results.length === 0 && mode.kind !== "idle";
+  const settled = current !== null && !busy;
+  const empty = settled && hits.length === 0 && mode.kind !== "idle";
 
-  function go(row: Row) {
-    router.push(`/sources/${row.slug}`);
+  function hrefFor(hit: Hit): string | null {
+    return hit.kind === "source" ? `/sources/${hit.slug}` : hit.path;
+  }
+
+  function go(hit: Hit) {
+    const href = hrefFor(hit);
+    if (href) router.push(href);
   }
 
   function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -163,7 +191,7 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
       setOpen(false);
       return;
     }
-    if (!results.length) {
+    if (!hits.length) {
       if (event.key === "Enter" && empty) {
         event.preventDefault();
         router.push(addHref);
@@ -173,14 +201,14 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setOpen(true);
-      setActive((i) => (i + 1) % results.length);
+      setActive((i) => (i + 1) % hits.length);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setOpen(true);
-      setActive((i) => (i - 1 + results.length) % results.length);
+      setActive((i) => (i - 1 + hits.length) % hits.length);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      go(results[active] ?? results[0]);
+      go(hits[active] ?? hits[0]);
     }
   }
 
@@ -212,10 +240,12 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
   }
 
   const listVisible = open && mode.kind !== "idle";
-  const activeId = listVisible && results.length ? `${listId}-${active}` : undefined;
+  const activeId = listVisible && hits.length ? `${listId}-${active}` : undefined;
 
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (blurTimer.current) clearTimeout(blurTimer.current); }, []);
+
+  const sourceCount = current?.sources.length ?? 0;
 
   return (
     <div className="w-full">
@@ -239,10 +269,7 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
           autoFocus={autoFocus}
           value={query}
           placeholder="A name, or 34.0891 -111.4672"
-          onFocus={() => {
-            setOpen(true);
-            void loadCorpus();
-          }}
+          onFocus={() => setOpen(true)}
           onBlur={() => {
             // Let a click on an option land before the list is torn down.
             blurTimer.current = setTimeout(() => setOpen(false), 120);
@@ -252,41 +279,92 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
             setNearPoint(null);
             setGeoError(null);
             setOpen(true);
-            void loadCorpus();
           }}
           onKeyDown={onKeyDown}
           className="w-full rounded-md border-2 border-foreground bg-surface px-4 py-3 text-lg outline-none placeholder:text-muted focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/40"
         />
 
-        {listVisible && (results.length > 0 || empty) && (
+        {listVisible && (hits.length > 0 || empty) && (
           <ul
             id={listId}
             role="listbox"
             aria-label="Matching water sources"
-            className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-border bg-surface shadow-lg"
+            className="absolute z-20 mt-1 max-h-[70vh] w-full overflow-y-auto rounded-md border border-border bg-surface shadow-lg"
           >
-            {results.map((row, i) => (
-              <li
-                key={row.slug}
-                id={`${listId}-${i}`}
-                role="option"
-                aria-selected={i === active}
-                onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => setActive(i)}
-                onClick={() => go(row)}
-                className={`flex cursor-pointer flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5 ${
-                  i === active ? "bg-accent-soft" : ""
-                }`}
-              >
-                <span className="hydro-inline">{row.name}</span>
-                <span className="value text-xs text-muted">
-                  {row.distance_km !== undefined && (
-                    <span className="mr-3 text-accent">{formatDistance(row.distance_km)}</span>
-                  )}
-                  {row.report_count} report{row.report_count === 1 ? "" : "s"}
-                </span>
+            {current?.fuzzy && hits.length > 0 && (
+              <li role="presentation" className="border-b border-border bg-surface-sunk px-4 py-2">
+                <p className="text-xs text-muted">
+                  Nothing matched that exactly — closest spellings:
+                </p>
               </li>
-            ))}
+            )}
+
+            {sourceCount > 0 && (
+              <li role="presentation" className="bg-surface-sunk px-4 py-1.5">
+                <p className="collar-label text-muted">Recorded sources</p>
+              </li>
+            )}
+
+            {hits.map((hit, i) => {
+              const isFirstFeature = hit.kind === "feature" && i === sourceCount;
+              return (
+                // A Fragment, not a wrapper element: a <ul role="listbox">
+                // whose children are divs is invalid markup, and screen readers
+                // stop counting the options.
+                <Fragment key={hit.kind === "source" ? `s-${hit.slug}` : `f-${hit.path}-${i}`}>
+                  {isFirstFeature && (
+                    <li role="presentation" className="bg-surface-sunk px-4 py-1.5">
+                      <p className="collar-label text-muted">
+                        On the map, not yet reported
+                        {current && current.feature_total > current.features.length && (
+                          <span className="normal-case tracking-normal">
+                            {" "}
+                            · showing {current.features.length} of {current.feature_total}
+                          </span>
+                        )}
+                      </p>
+                    </li>
+                  )}
+                  <li
+                    id={`${listId}-${i}`}
+                    role="option"
+                    aria-selected={i === active}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setActive(i)}
+                    onClick={() => go(hit)}
+                    className={`flex cursor-pointer flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5 ${
+                      i === active ? "bg-accent-soft" : ""
+                    }`}
+                  >
+                    {hit.kind === "source" ? (
+                      <>
+                        <span className="hydro-inline">{hit.name}</span>
+                        <span className="value text-xs text-muted">
+                          {hit.distance_km !== null && (
+                            <span className="mr-3 text-accent">
+                              {formatDistance(hit.distance_km)}
+                            </span>
+                          )}
+                          {hit.report_count} report{hit.report_count === 1 ? "" : "s"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span>{featureLabel(hit)}</span>
+                        <span className="value text-xs text-muted">
+                          {hit.distance_km !== null && (
+                            <span className="mr-3 text-accent">
+                              {formatDistance(hit.distance_km)}
+                            </span>
+                          )}
+                          {featureWhere(hit)}
+                        </span>
+                      </>
+                    )}
+                  </li>
+                </Fragment>
+              );
+            })}
 
             {/* Nothing found is a first-class result, not an error. This is how
                 the corpus grows: the gaps are the point. */}
@@ -294,21 +372,34 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
               <li className="px-4 py-3">
                 <p className="text-sm leading-relaxed">
                   {mode.kind === "name" ? (
-                    <>No source recorded under that name.</>
+                    <>
+                      Nothing by that name in {COVERAGE} — the states this site covers.
+                    </>
+                  ) : current?.covered === false ? (
+                    // Out of coverage is a different sentence from not found,
+                    // and saying the wrong one tells somebody their spring does
+                    // not exist when the truth is that this site has not
+                    // loaded their state.
+                    <>
+                      That is outside the area this site covers. The gazetteer holds {COVERAGE};
+                      there is nothing loaded near{" "}
+                      <span className="value">{point ? formatLatLon(point) : ""}</span>.
+                    </>
                   ) : (
                     <>
-                      No source recorded within{" "}
+                      Nothing recorded or mapped within{" "}
                       <span className="value">{LOOKUP_RADIUS_KM} km</span> of{" "}
                       <span className="value">{point ? formatLatLon(point) : ""}</span>.
                     </>
                   )}{" "}
-                  <a
-                    href={addHref}
-                    className="font-medium text-accent underline decoration-border underline-offset-4"
-                  >
-                    Add it
-                  </a>
-                  .
+                  {current?.covered !== false && (
+                    <a
+                      href={addHref}
+                      className="font-medium text-accent underline decoration-border underline-offset-4"
+                    >
+                      Add it
+                    </a>
+                  )}
                 </p>
               </li>
             )}
@@ -339,7 +430,7 @@ export function SearchField({ autoFocus = false }: { autoFocus?: boolean }) {
         </p>
       )}
 
-      {corpusError && <p className="mt-2 text-sm text-warn">{corpusError}</p>}
+      {error && <p className="mt-2 text-sm text-warn">{error}</p>}
       {geoError && <p className="mt-2 text-sm text-warn">{geoError}</p>}
     </div>
   );

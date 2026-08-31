@@ -343,3 +343,218 @@ export async function sourcesNearFeature(
     ORDER BY distance_m
   `) as FeatureSourceMatch[];
 }
+
+export type SourceHit = {
+  kind: "source";
+  slug: string;
+  name: string;
+  report_count: number;
+  last_reported: string | null;
+  distance_km: number | null;
+};
+
+export type FeatureHit = {
+  kind: "feature";
+  feed: string;
+  external_id: string;
+  name: string | null;
+  feature_class: string;
+  county: string | null;
+  state: string;
+  lat: number;
+  lon: number;
+  distance_km: number | null;
+};
+
+/**
+ * Name search, in two tiers: exact substring first, trigram only as a fallback.
+ *
+ * One tier cannot do both jobs, and the numbers say so plainly. At the trigram
+ * default threshold of 0.3, "cottonwood spring" matches 5,268 features — every
+ * name with enough letters in common — against 262 that actually contain the
+ * phrase. Tighten to 0.45 and that reads sensibly, but "cottonwd spg" drops to
+ * zero, which is exactly the misremembered query 0007 built a trigram index to
+ * catch.
+ *
+ * So: if the typed text appears in a name, those are the matches and the count
+ * means something. Only when nothing contains it does the fuzzy tier run, and
+ * the result says it is guessing.
+ */
+/**
+ * Sources matching a name. ILIKE on a corpus that grows one observation at a
+ * time, with the same fuzzy fallback so a typo does not hide the one page that
+ * actually has reports behind it.
+ */
+export async function searchSources(
+  query: string,
+  limit: number,
+  mode: "exact" | "fuzzy" = "exact",
+): Promise<SourceHit[]> {
+  const sql = db();
+  if (mode === "exact") {
+    return (await sql`
+      SELECT 'source' AS kind, s.slug, s.name,
+             count(r.id)::int AS report_count,
+             max(r.observed_on)::text AS last_reported,
+             NULL::float8 AS distance_km
+      FROM sources s
+      LEFT JOIN reports r ON r.source_id = s.id
+      WHERE s.name ILIKE ${"%" + query + "%"}
+      GROUP BY s.id, s.slug, s.name
+      ORDER BY count(r.id) DESC, s.name
+      LIMIT ${limit}
+    `) as SourceHit[];
+  }
+  return (await sql`
+    SELECT 'source' AS kind, s.slug, s.name,
+           count(r.id)::int AS report_count,
+           max(r.observed_on)::text AS last_reported,
+           NULL::float8 AS distance_km
+    FROM sources s
+    LEFT JOIN reports r ON r.source_id = s.id
+    WHERE similarity(s.name, ${query}) >= 0.3
+    GROUP BY s.id, s.slug, s.name
+    ORDER BY similarity(s.name, ${query}) DESC, count(r.id) DESC
+    LIMIT ${limit}
+  `) as SourceHit[];
+}
+
+/** Sources near a point, as search hits. Nearest first. */
+export async function searchSourcesNear(
+  lat: number,
+  lon: number,
+  radiusKm: number,
+  limit: number,
+): Promise<SourceHit[]> {
+  const sql = db();
+  return (await sql`
+    SELECT 'source' AS kind, s.slug, s.name,
+           count(r.id)::int AS report_count,
+           max(r.observed_on)::text AS last_reported,
+           (ST_Distance(s.geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography) / 1000)::float8 AS distance_km
+    FROM sources s
+    LEFT JOIN reports r ON r.source_id = s.id
+    WHERE ST_DWithin(s.geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, ${radiusKm * 1000})
+    GROUP BY s.id, s.slug, s.name, s.geog
+    ORDER BY distance_km
+    LIMIT ${limit}
+  `) as SourceHit[];
+}
+
+/**
+ * Gazetteer features matching a name, excluding anything already promoted.
+ *
+ * A feature whose identifier is already on a source is dropped: that page
+ * redirects to the source anyway, and offering both would put one spring in the
+ * list twice under two headings.
+ *
+ * The total is counted, not inferred from the page of six. 203 primary rows are
+ * named "Cottonwood Spring" and two of the first three share a county, so a
+ * slice of six presented as the answer is a lie of omission — "6 of 262" tells
+ * someone their query is the problem, which is the only thing that leads to a
+ * better one.
+ */
+export async function searchFeatures(
+  query: string,
+  limit: number,
+  mode: "exact" | "fuzzy" = "exact",
+): Promise<{ rows: FeatureHit[]; total: number }> {
+  const sql = db();
+  const like = "%" + query + "%";
+
+  if (mode === "exact") {
+    const rows = (await sql`
+      SELECT 'feature' AS kind, g.feed, g.external_id, g.name, g.feature_class,
+             g.county, g.state, g.lat, g.lon, NULL::float8 AS distance_km
+      FROM gazetteer g
+      WHERE g.duplicate_of IS NULL
+        AND g.name ILIKE ${like}
+        AND NOT EXISTS (
+          SELECT 1 FROM sources s
+          WHERE (s.gnis_id = g.external_id AND g.feed LIKE 'USGS GNIS%')
+             OR (s.osm_id = g.external_id AND g.feed = 'OpenStreetMap')
+        )
+      ORDER BY length(g.name), g.state, g.county NULLS LAST, g.name
+      LIMIT ${limit}
+    `) as FeatureHit[];
+    if (rows.length === 0) return { rows, total: 0 };
+
+    const counted = (await sql`
+      SELECT count(*)::int AS n
+      FROM gazetteer g
+      WHERE g.duplicate_of IS NULL
+        AND g.name ILIKE ${like}
+        AND NOT EXISTS (
+          SELECT 1 FROM sources s
+          WHERE (s.gnis_id = g.external_id AND g.feed LIKE 'USGS GNIS%')
+             OR (s.osm_id = g.external_id AND g.feed = 'OpenStreetMap')
+        )
+    `) as { n: number }[];
+    return { rows, total: counted[0]?.n ?? rows.length };
+  }
+
+  // Nothing anywhere contained the text. Now the trigram index earns its keep:
+  // `%` is index-backed at the default 0.3 threshold, which is far too loose to
+  // be a primary filter and exactly right as a last resort.
+  const rows = (await sql`
+    SELECT 'feature' AS kind, g.feed, g.external_id, g.name, g.feature_class,
+           g.county, g.state, g.lat, g.lon, NULL::float8 AS distance_km
+    FROM gazetteer g
+    WHERE g.duplicate_of IS NULL
+      AND g.name IS NOT NULL
+      AND g.name % ${query}
+      AND NOT EXISTS (
+        SELECT 1 FROM sources s
+        WHERE (s.gnis_id = g.external_id AND g.feed LIKE 'USGS GNIS%')
+           OR (s.osm_id = g.external_id AND g.feed = 'OpenStreetMap')
+      )
+    ORDER BY similarity(g.name, ${query}) DESC, g.state, g.county NULLS LAST, g.name
+    LIMIT ${limit}
+  `) as FeatureHit[];
+  return { rows, total: rows.length };
+}
+
+/** Features near a point. Includes unnamed rows — an unnamed spring 300 m away
+    is a real thing to tell somebody, which is half of why 0007 kept them. */
+export async function searchFeaturesNear(
+  lat: number,
+  lon: number,
+  radiusKm: number,
+  limit: number,
+): Promise<FeatureHit[]> {
+  const sql = db();
+  return (await sql`
+    SELECT 'feature' AS kind, g.feed, g.external_id, g.name, g.feature_class,
+           g.county, g.state, g.lat, g.lon,
+           (ST_Distance(g.geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography) / 1000)::float8 AS distance_km
+    FROM gazetteer g
+    WHERE g.duplicate_of IS NULL
+      AND ST_DWithin(g.geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, ${radiusKm * 1000})
+      AND NOT EXISTS (
+        SELECT 1 FROM sources s
+        WHERE (s.gnis_id = g.external_id AND g.feed LIKE 'USGS GNIS%')
+           OR (s.osm_id = g.external_id AND g.feed = 'OpenStreetMap')
+      )
+    ORDER BY distance_km
+    LIMIT ${limit}
+  `) as FeatureHit[];
+}
+
+/**
+ * Is this coordinate inside what the site actually covers?
+ *
+ * Asked of the data rather than of a bounding box. The gazetteer's CHECK
+ * constraint names six states, but a box around them includes chunks of Idaho
+ * and Texas that hold no rows, and "nothing found" for those should say the
+ * scope rather than imply the water does not exist.
+ */
+export async function gazetteerCoversPoint(lat: number, lon: number, radiusKm = 50): Promise<boolean> {
+  const sql = db();
+  const rows = (await sql`
+    SELECT EXISTS (
+      SELECT 1 FROM gazetteer
+      WHERE ST_DWithin(geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, ${radiusKm * 1000})
+    ) AS covered
+  `) as { covered: boolean }[];
+  return rows[0]?.covered ?? false;
+}
