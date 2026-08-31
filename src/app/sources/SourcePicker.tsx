@@ -51,12 +51,22 @@ export function SourcePicker({
   id,
   sources,
   initialPoint = null,
+  initialName = "",
+  featureRef = null,
 }: {
   id?: string;
   sources: MapSource[];
   /** Pre-aimed from the search field's "add it", so a coordinate typed on the
       home page is not typed a second time here. */
   initialPoint?: LatLon | null;
+  /** Pre-filled when arriving from a gazetteer feature page. */
+  initialName?: string;
+  /**
+   * The gazetteer feature being promoted, if this arrival came from one. Sent
+   * back on create so the new source carries the feed's identifier — without
+   * it the gazetteer and the corpus drift into two points for one spring.
+   */
+  featureRef?: string | null;
 }) {
   const router = useRouter();
   const [text, setText] = useState(initialPoint ? formatLatLon(initialPoint) : "");
@@ -65,7 +75,7 @@ export function SourcePicker({
   const [pooled, setPooled] = useState<Nearby[] | null>(null);
   const [checking, setChecking] = useState(false);
 
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -154,7 +164,13 @@ export function SourcePicker({
       const res = await fetch("/api/sources", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), lat: point.lat, lon: point.lon, notes: notes.trim() || null }),
+        body: JSON.stringify({
+          name: name.trim(),
+          lat: point.lat,
+          lon: point.lon,
+          notes: notes.trim() || null,
+          ...(featureRef ? { feature_ref: featureRef } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -301,6 +317,12 @@ export function SourcePicker({
               What it is called on the map or in reports. Include the area if the name is a common
               one — there are a great many Cottonwood Springs.
             </p>
+            {featureRef && (
+              <p className="mt-1 text-sm text-muted">
+                Pre-filled from the gazetteer. The feature&rsquo;s identifier travels with this
+                source, so keep the pin on the feature — edit the name freely.
+              </p>
+            )}
             <input
               id="name"
               value={name}

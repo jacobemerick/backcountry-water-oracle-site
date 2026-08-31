@@ -1,5 +1,13 @@
-import { createSource, findSourceBySlug, listSourcesWithCounts, sourcesNear } from "@/lib/db";
-import { parseLatLon, slugify } from "@/lib/coords";
+import {
+  createSource,
+  findGazetteerFeature,
+  findSourceByExternalId,
+  findSourceBySlug,
+  listSourcesWithCounts,
+  sourcesNear,
+} from "@/lib/db";
+import { distanceKm, parseLatLon, slugify } from "@/lib/coords";
+import { parseFeatureRef } from "@/lib/feature-ref";
 import { RULES, limitByIp, rateLimitHeaders, sweepRateLimits, tooManyRequests } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +35,18 @@ const MAX_NOTES = 2000;
  * enough reports to say anything.
  */
 const SAME_SOURCE_KM = 0.05;
+
+/**
+ * How far a promoted source may sit from the gazetteer feature it claims.
+ *
+ * Promotion copies the feed's identifier onto the new row, and that identifier
+ * is what every later reconciliation trusts. The picker lets someone adjust the
+ * pin before saving — correcting a GNIS coordinate by a couple of hundred
+ * metres is legitimate and common — but past a quarter kilometre they are
+ * pinning different water, and carrying the identifier across would tell the
+ * next gazetteer reload that this spring is somewhere it is not.
+ */
+const PROMOTION_RADIUS_KM = 0.25;
 
 export async function POST(request: Request) {
   // Before parsing anything: a write is the expensive, hard-to-undo action, and
@@ -103,7 +123,52 @@ export async function POST(request: Request) {
       }
     }
 
-    const source = await createSource({ name, slug, lat, lon, notes });
+    /*
+     * Promotion. A gazetteer feature has no `sources` row until somebody
+     * reports on it — that is the whole point of keeping the two tables apart
+     * (0007) — and this is where the row is created, carrying the feed's
+     * identifier so the gazetteer can still be reloaded wholesale afterwards.
+     */
+    let gnisId: string | null = null;
+    let osmId: string | null = null;
+    if (typeof body.feature_ref === "string") {
+      const ref = parseFeatureRef(body.feature_ref);
+      if (!ref) return Response.json({ error: "That is not a valid feature reference." }, { status: 400 });
+
+      const feature = await findGazetteerFeature(ref.feed, ref.externalId);
+      if (!feature) return Response.json({ error: "No such feature." }, { status: 404 });
+
+      // Already promoted: send them to the source rather than creating a second
+      // row for one spring.
+      const column = ref.marker === "gnis" ? "gnis_id" : "osm_id";
+      const promoted = await findSourceByExternalId(column, ref.externalId);
+      if (promoted) {
+        return Response.json(
+          {
+            error: `"${promoted.name}" already records this feature. Add your report there.`,
+            existing: promoted,
+          },
+          { status: 409 },
+        );
+      }
+
+      const drift = distanceKm({ lat, lon }, { lat: feature.lat, lon: feature.lon });
+      if (drift > PROMOTION_RADIUS_KM) {
+        return Response.json(
+          {
+            error:
+              `That point is ${Math.round(drift * 1000)} m from the feature it claims to be. ` +
+              "Add it as a new source without the feature link, or move the pin back.",
+          },
+          { status: 400 },
+        );
+      }
+
+      if (ref.marker === "gnis") gnisId = ref.externalId;
+      else osmId = ref.externalId;
+    }
+
+    const source = await createSource({ name, slug, lat, lon, notes, gnisId, osmId });
 
     // Opportunistic housekeeping on a path that is already writing and is
     // rare by design. A cron would be tidier; a stale counter row costs

@@ -114,11 +114,17 @@ export async function createSource(input: {
   lat: number;
   lon: number;
   notes?: string | null;
+  /* Promotion: the gazetteer identifier this source came from, so the two never
+     drift into a second point for one spring and the gazetteer stays reloadable
+     wholesale. Null for a source somebody pinned themselves. */
+  gnisId?: string | null;
+  osmId?: string | null;
 }): Promise<Source> {
   const sql = db();
   const rows = (await sql`
-    INSERT INTO sources (name, slug, lat, lon, notes)
-    VALUES (${input.name}, ${input.slug}, ${input.lat}, ${input.lon}, ${input.notes ?? null})
+    INSERT INTO sources (name, slug, lat, lon, notes, gnis_id, osm_id)
+    VALUES (${input.name}, ${input.slug}, ${input.lat}, ${input.lon}, ${input.notes ?? null},
+            ${input.gnisId ?? null}, ${input.osmId ?? null})
     RETURNING id::int AS id, name, slug, lat, lon
   `) as Source[];
   return rows[0];
@@ -243,4 +249,97 @@ export async function recordFetchAttempt(input: {
        ${input.byteSize ?? null}, ${input.durationMs ?? null}, ${input.error ?? null},
        ${input.snapshotId ?? null})
   `;
+}
+
+export type GazetteerFeature = {
+  id: number;
+  feed: string;
+  licence: string;
+  external_id: string;
+  name: string | null;
+  feature_class: string;
+  raw_class: string | null;
+  state: string;
+  county: string | null;
+  lat: number;
+  lon: number;
+  duplicate_of: number | null;
+};
+
+/** One feature, by the identifier its URL carries. */
+export async function findGazetteerFeature(
+  feed: string,
+  externalId: string,
+): Promise<GazetteerFeature | null> {
+  const sql = db();
+  const rows = (await sql`
+    SELECT id::int AS id, feed, licence, external_id, name, feature_class, raw_class,
+           state, county, lat, lon, duplicate_of::int AS duplicate_of
+    FROM gazetteer
+    WHERE feed = ${feed} AND external_id = ${externalId}
+  `) as GazetteerFeature[];
+  return rows[0] ?? null;
+}
+
+export async function gazetteerFeatureById(id: number): Promise<GazetteerFeature | null> {
+  const sql = db();
+  const rows = (await sql`
+    SELECT id::int AS id, feed, licence, external_id, name, feature_class, raw_class,
+           state, county, lat, lon, duplicate_of::int AS duplicate_of
+    FROM gazetteer
+    WHERE id = ${id}
+  `) as GazetteerFeature[];
+  return rows[0] ?? null;
+}
+
+/**
+ * The promotion check: has this feature already been reported on?
+ *
+ * Matched on the feed's own identifier rather than on name or proximity.
+ * `sources.gnis_id` / `osm_id` are copied across at promotion for exactly this,
+ * and it is the only join that stays correct when somebody later renames the
+ * source or nudges its coordinate.
+ */
+export async function findSourceByExternalId(
+  column: "gnis_id" | "osm_id",
+  externalId: string,
+): Promise<Source | null> {
+  const sql = db();
+  const rows =
+    column === "gnis_id"
+      ? ((await sql`SELECT id::int AS id, name, slug, lat, lon FROM sources WHERE gnis_id = ${externalId}`) as Source[])
+      : ((await sql`SELECT id::int AS id, name, slug, lat, lon FROM sources WHERE osm_id = ${externalId}`) as Source[]);
+  return rows[0] ?? null;
+}
+
+export type FeatureSourceMatch = Source & { distance_m: number; name_matches: boolean };
+
+/**
+ * Sources that might already be this gazetteer feature.
+ *
+ * The same question `scripts/import-reports.mjs` asks at import time, asked at
+ * read time — because the identifier link is only ever written by an import or
+ * by promotion, and a source somebody pinned by hand carries no identifier at
+ * all. Measured on the live corpus: 35 of 57 sources sit within 500 m of an
+ * unlinked gazetteer feature, 0–4 m and same-named in most cases. Without this,
+ * every one of those springs has two live URLs saying opposite things.
+ *
+ * Returns candidates rather than a verdict; `chooseGazetteerLink`'s rule —
+ * name and proximity together, refusing on ambiguity — decides.
+ */
+export async function sourcesNearFeature(
+  lat: number,
+  lon: number,
+  name: string | null,
+  radiusM: number,
+): Promise<FeatureSourceMatch[]> {
+  const sql = db();
+  return (await sql`
+    SELECT id::int AS id, s.name, slug, lat, lon,
+           ST_Distance(geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography) AS distance_m,
+           (${name}::text IS NOT NULL AND lower(s.name) = lower(${name})) AS name_matches
+    FROM sources s
+    WHERE ST_DWithin(geog, ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, ${radiusM})
+    ORDER BY distance_m
+  `) as FeatureSourceMatch[];
 }
