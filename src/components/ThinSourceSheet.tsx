@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { EngineRow } from "@/lib/engine-csv";
 import { MIN_REPORTS_FOR_VERDICT, THRESHOLD_COPY } from "@/lib/present";
+import { RAIN_COPY, bandOf } from "@/lib/rain-percentile";
+import type { RainReading } from "@/lib/rain-percentile";
 import { formatDistance } from "@/lib/coords";
 import { RecordSoFar } from "./ReportHistory";
 
@@ -31,6 +33,8 @@ export function ThinSourceSheet({
   rows,
   neighbours,
   engineError,
+  rain = null,
+  constantFrom = null,
   children,
 }: {
   reportCount: number;
@@ -39,6 +43,18 @@ export function ThinSourceSheet({
   /** Everything inside the pooling radius, nearest first. */
   neighbours: Neighbour[];
   engineError?: string | null;
+  /**
+   * Antecedent rain against this coordinate's own climatology, or null when the
+   * record cannot support the sentence. Needs no reports, which is exactly why
+   * it belongs on the page that has none.
+   */
+  rain?: RainReading | null;
+  /**
+   * The engine's usable-report count when it reports the read as *constant* —
+   * null otherwise. Our refusal is a judgement about confidence; this is the
+   * engine's arithmetic reason, and it is the stronger of the two.
+   */
+  constantFrom?: number | null;
   /** The report form — the thing that actually fixes this. */
   children: React.ReactNode;
 }) {
@@ -94,6 +110,13 @@ export function ThinSourceSheet({
               is not rendered.
             </p>
           )}
+          {/*
+            The engine's own reason, when it has one. "That number is noise"
+            above is a judgement; this is arithmetic, and it closes the door the
+            other sentence leaves open — there is no point asking what the
+            number says, because it says the same thing every day of the year.
+          */}
+          {constantFrom !== null && <p>{THRESHOLD_COPY.constantRead(constantFrom)}</p>}
           <p>{THRESHOLD_COPY.needed(reportCount)}</p>
         </div>
 
@@ -105,13 +128,34 @@ export function ThinSourceSheet({
       </section>
 
       {/*
-        A rainfall-percentile-against-climatology block goes here: useful with no
-        reports at all, and explicitly *not* a flow verdict. It needs the engine's
-        risky mode, which is issue #12 and not yet built. Deliberately rendering
-        nothing until then — an empty or placeholder block on this page is exactly
-        the "there's something here, probably fine" glance the rest of this layout
-        exists to prevent.
+        Rainfall against this coordinate's own climatology (#12).
+
+        Deliberately the same words the gazetteer feature page uses, from the same
+        helpers, because until #12 these two pages described the same water
+        differently — the feature page could say what the weather had done and the
+        page holding the actual observations could not.
+
+        It is not a verdict and must never be skimmed as one, so it does not use
+        the verdict block's shape: no tone colour, no headline number, prose
+        measure, and its own disclaimer attached rather than a footnote. The
+        caveat is not boilerplate — this is the only figure on a page that has
+        deliberately refused to give one, which makes it the thing most likely to
+        be read as the answer.
       */}
+      {rain && (
+        <section>
+          <p className="collar-label text-muted">Rainfall here</p>
+          <p className="mt-3 max-w-2xl text-lg leading-relaxed">{RAIN_COPY.summary(rain)}</p>
+          <div className="mt-4 max-w-2xl rounded-lg border-l-2 border-overprint bg-surface p-4">
+            <p className="text-sm leading-relaxed text-muted">{RAIN_COPY.caveat}</p>
+          </div>
+          <p className="mt-3 max-w-2xl text-xs text-muted">
+            <span className="value">{rain.total.toFixed(2)}&Prime;</span> over{" "}
+            {rain.windowDays} days, against {rain.years} years at this coordinate. Band:{" "}
+            {bandOf(rain)}.
+          </p>
+        </section>
+      )}
 
       {usefulNeighbour && (
         <section>

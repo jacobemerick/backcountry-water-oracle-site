@@ -4,6 +4,7 @@ import {
   FRESHNESS_LABEL,
   FRESHNESS_NOTE,
   MIN_REPORTS_FOR_VERDICT,
+  THRESHOLD_COPY,
   confidenceOf,
   describeAge,
   freshnessOf,
@@ -215,6 +216,20 @@ export function TheRead({
               correlation means anything. The observations below are real; any forecast built on
               them would not be.
             </p>
+            {/*
+              The engine's own reason, when it has one, under ours.
+
+              Ours is a judgement about confidence; this one is arithmetic, and it
+              answers the question the refusal provokes — "fine, but what does it
+              say anyway?" It says the same thing in March and in June. Rendered
+              only when the engine actually set the flag, never inferred from `n`,
+              so the sentence cannot outlive the behaviour it describes.
+            */}
+            {source.pred_is_constant && (
+              <p className="mt-2 text-sm text-muted">
+                {THRESHOLD_COPY.constantRead(source.n)}
+              </p>
+            )}
           </>
         )}
       </div>

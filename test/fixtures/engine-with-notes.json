@@ -1,7 +1,7 @@
 {
   "asof": "2026-08-05",
   "params": {
-    "engine_version": "0.2.0",
+    "engine_version": "0.3.0",
     "precip": "open-meteo",
     "radar": "none",
     "pool": true,
@@ -94,6 +94,8 @@
       "precip_in": 4.644,
       "predicted_flow": 0.6,
       "verdict": "Likely flowing (moderate)",
+      "analog_n": 2,
+      "pred_is_constant": true,
       "harmonics": 1,
       "rain_percentiles": {
         "30d": {
@@ -164,6 +166,8 @@
       "precip_in": null,
       "predicted_flow": null,
       "verdict": null,
+      "analog_n": null,
+      "pred_is_constant": null,
       "harmonics": 1,
       "rain_percentiles": {
         "30d": {

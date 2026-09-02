@@ -72,6 +72,29 @@ export const THRESHOLD_COPY = {
     );
   },
 
+  /**
+   * Why the number we are not showing would not have been a forecast.
+   *
+   * This is the *engine's* reason, not ours, and it is a stronger statement
+   * than the floor. `MIN_REPORTS_FOR_VERDICT` is a judgement about confidence;
+   * `pred_is_constant` is arithmetic. Below the engine's analog width its
+   * nearest-analog pool is the source's whole history, so the sort selects
+   * nothing, the current rainfall is computed and then discarded, and the same
+   * number comes back on every date of every year.
+   *
+   * Worth saying out loud on the page because "not enough reports" invites
+   * "but what does it say anyway?", and this answers it: it says the same
+   * thing in March and in June, so there is nothing to peek at.
+   */
+  constantRead(n: number): string {
+    return (
+      `With ${n} report${n === 1 ? "" : "s"}, the engine's read would average all ` +
+      `${n} of them rather than the ones whose rainfall matched today — so it would ` +
+      `return the same figure on every date of the year, whatever the weather had ` +
+      `done. It is a summary of the record, not a forecast.`
+    );
+  },
+
   /** What a thin source needs to stop being thin. */
   needed(n: number): string {
     const short = Math.max(0, MIN_REPORTS_FOR_VERDICT - n);
