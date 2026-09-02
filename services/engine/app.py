@@ -11,7 +11,7 @@ Contract, mirroring the engine's own:
     POST /  {"csv": "<engine CSV>", "asof": "...", "harmonics": N,
              "pool": bool, "pool_radius_km": N,
              "precip": {"34.08587,-111.49097": {"start": "2007-01-01", "values": [...]}}}
-    ->      the engine's --json object, verbatim
+    ->      the engine's --format json object, verbatim
 
 `precip` keys are raw coordinates, not rounded ones -- the rounding happens
 here, in one language, for the reason spelled out in _supplied_precip_provider.

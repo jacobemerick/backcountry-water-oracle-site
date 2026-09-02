@@ -9,7 +9,7 @@ import { SMALL_N_THRESHOLD, confidenceOf, monthlyFlow, verdictTone } from "./pre
 /**
  * Guards the boundary with the Python engine.
  *
- * The fixtures are real `forecast.py --json` output, not hand-written — a
+ * The fixtures are real `forecast.py --format json` output, not hand-written — a
  * hand-written fixture only ever encodes what we already believed. This suite
  * exists because `notes` was typed as string[] when the engine actually emits
  * {kind, source, message} objects: everything compiled, the local run happened
@@ -240,5 +240,76 @@ test("SMALL_N_THRESHOLD agrees with the engine's own small_n flag", () => {
       s.n < SMALL_N_THRESHOLD,
       `${s.name} has n=${s.n}; small_n should be ${s.n < SMALL_N_THRESHOLD}`,
     );
+  }
+});
+
+/**
+ * `analog_n` / `pred_is_constant` — engine 0.3.0.
+ *
+ * The engine averages the ANALOG_K past reports whose antecedent rain best
+ * matched today's. Below that width the "nearest" analogs are the whole
+ * history, so the sort selects nothing and the read is the same on every date.
+ * These three tests pin the shape, the arithmetic, and — the one that matters —
+ * the relationship to this site's own floor.
+ */
+test("analog_n and pred_is_constant are present, and null exactly where a read is", () => {
+  for (const result of [THREE, WITH_NOTES]) {
+    for (const s of result.sources) {
+      if (hasRead(s)) {
+        assert.ok(isNum(s.analog_n), `${s.name}: analog_n should be a number`);
+        assert.equal(typeof s.pred_is_constant, "boolean", `${s.name}: pred_is_constant`);
+      } else {
+        // Null, never absent and never false — false would assert something
+        // about a read that does not exist.
+        assert.equal(s.analog_n, null, `${s.name}: analog_n should be null`);
+        assert.equal(s.pred_is_constant, null, `${s.name}: pred_is_constant should be null`);
+      }
+    }
+  }
+});
+
+test("pred_is_constant is exactly 'the pool was the whole history'", () => {
+  const seen = new Set<boolean>();
+  for (const result of [THREE, WITH_NOTES]) {
+    for (const s of result.sources) {
+      if (!hasRead(s)) continue;
+      assert.ok(s.analog_n <= s.n, `${s.name}: analog_n ${s.analog_n} exceeds n ${s.n}`);
+      assert.equal(
+        s.pred_is_constant,
+        s.analog_n === s.n,
+        `${s.name}: n=${s.n}, analog_n=${s.analog_n}`,
+      );
+      seen.add(s.pred_is_constant);
+    }
+  }
+  // Both branches have to be exercised or this test proves nothing. Chilson at
+  // n=2 in the notes fixture is the true case; the three-source fixture is false.
+  assert.deepEqual([...seen].sort(), [false, true], "fixtures must cover both");
+});
+
+/**
+ * The load-bearing one: **the floor still dominates the engine's boundary.**
+ *
+ * MIN_REPORTS_FOR_VERDICT (10) is a judgement about confidence; the engine's
+ * analog width (5) is arithmetic. Today the first is the stricter of the two,
+ * so no source we show a verdict for can have a constant read — the copy in
+ * TheRead's no-verdict branch is safe to phrase as "the number we are not
+ * showing you", and nothing on the site ever renders a verdict the engine
+ * considers structurally frozen.
+ *
+ * That is a relationship between two numbers owned by two repos, and nothing
+ * enforces it. If the engine ever raised ANALOG_K to 10 or beyond, this fails —
+ * which is the signal that the floor has to move too, not that the test is wrong.
+ */
+test("no source above the site's floor has a constant read", () => {
+  for (const result of [THREE, WITH_NOTES]) {
+    for (const s of result.sources) {
+      if (!hasRead(s) || !s.pred_is_constant) continue;
+      assert.equal(
+        confidenceOf(s),
+        "none",
+        `${s.name} (n=${s.n}) has a frozen read but the site would show it`,
+      );
+    }
   }
 });

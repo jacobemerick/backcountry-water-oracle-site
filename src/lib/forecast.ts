@@ -119,6 +119,29 @@ export type SourceForecast = {
   precip_in: number | null;
   predicted_flow: number | null;
   verdict: string | null;
+  /**
+   * How many past reports `predicted_flow` averaged — at most the engine's
+   * analog width (5). Null when there is no read.
+   */
+  analog_n: number | null;
+  /**
+   * True when that average was the source's *entire* history, which the engine
+   * reaches at `n <= 5`. The rain figure was computed and then discarded, so the
+   * source returns the same number on every date — the record, not a forecast.
+   *
+   * Not the same claim as `small_n` (`n < 25`), which says a read is coarse. A
+   * source can be `small_n` and still respond to rain; Castersen Seep at n = 15
+   * is exactly that. Both flags, both meanings, neither implying the other.
+   *
+   * Null when there is no read. Read an *absent* key (a payload stored by 0.2.0
+   * or earlier) as unknown rather than false — at `n <= 5` it would have been
+   * true, and that is most sources.
+   *
+   * On this site it is always true *below* MIN_REPORTS_FOR_VERDICT and never
+   * above it, so it never contradicts a verdict we show — contract.test.ts
+   * asserts that relationship rather than assuming it.
+   */
+  pred_is_constant: boolean | null;
   harmonics: number;
   /** Present for every source, reports or not. Never a flow verdict. */
   rain_percentiles: Record<string, RainPercentile>;
@@ -150,6 +173,8 @@ export type ReadableSource = SourceForecast & {
   precip_in: number;
   predicted_flow: number;
   verdict: string;
+  analog_n: number;
+  pred_is_constant: boolean;
 };
 
 /**
@@ -225,7 +250,10 @@ export class EngineError extends Error {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function buildArgs(opts: ForecastOptions): string[] {
-  const args = ["-", "--json"];
+  // `--format json`, not `--json`: the old spelling was removed in engine 0.3.0
+  // and now exits 2 with a message rather than falling through to the generic
+  // unknown-flag error. The payload behind it did not change.
+  const args = ["-", "--format", "json"];
 
   if (opts.asof !== undefined) {
     // The engine parses this with date.fromisoformat and would throw a raw
@@ -402,7 +430,7 @@ async function runAsSubprocess(
       } catch {
         reject(
           new EngineError(
-            "Engine stdout was not valid JSON. Is the installed engine current with --json?",
+            "Engine stdout was not valid JSON. Does the installed engine support --format json (0.3.0+)?",
             stderr || stdout.slice(0, 500),
           ),
         );

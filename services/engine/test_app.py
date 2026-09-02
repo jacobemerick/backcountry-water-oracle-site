@@ -70,7 +70,7 @@ def via_cli(csv_text, *args):
         path = fh.name
     try:
         proc = subprocess.run(
-            [ENGINE_CLI, path, "--json", *args],
+            [ENGINE_CLI, path, "--format", "json", *args],
             capture_output=True,
             text=True,
             timeout=180,

@@ -156,10 +156,18 @@ To move to a different engine release:
 
 ```bash
 ./scripts/bump-engine.sh            # latest release
-./scripts/bump-engine.sh v0.2.0     # a specific tag
+./scripts/bump-engine.sh v0.3.0     # a specific tag
 npm run engine:install && npm test  # fixtures are recorded from the engine, so
                                     # a contract change fails here — the point
 ```
+
+`bump-engine.sh` moves the pin and nothing else, so read the engine's changelog
+for the release you are moving to: a **CLI** change needs the call sites changed
+in the same commit, and the pin alone will leave local dev broken while
+production, which imports the engine rather than shelling out, keeps working.
+0.3.0 removed `--json` in favour of `--format json` — `src/lib/forecast.ts`,
+`scripts/record-fixtures.sh` and `services/engine/test_app.py` all had to move
+with it.
 
 ### Database
 

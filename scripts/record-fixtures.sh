@@ -2,7 +2,7 @@
 #
 # Re-record the engine contract fixtures from the pinned engine.
 #
-# The fixtures are real `water-forecast --json` output, never hand-written: a
+# The fixtures are real `water-forecast --format json` output, never hand-written: a
 # hand-written fixture only encodes what we already believed, which is exactly
 # how `notes` came to be typed as string[] when the engine emits objects.
 #
@@ -31,7 +31,7 @@ fi
 # cross-check on this host. Fixtures must describe what we actually serve.
 for name in engine-three-sources engine-with-notes; do
   echo "recording $name"
-  "$CLI" "$FIXTURES/$name.csv" --json --asof="$ASOF" --radar=none > "$FIXTURES/$name.json"
+  "$CLI" "$FIXTURES/$name.csv" --format json --asof="$ASOF" --radar=none > "$FIXTURES/$name.json"
 done
 
 echo
