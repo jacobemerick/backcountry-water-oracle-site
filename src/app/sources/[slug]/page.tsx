@@ -7,6 +7,8 @@ import { engineRowsForSources, findSourceBySlug, sourcesNear } from "@/lib/db";
 import { EngineError, hasRead, runForecast } from "@/lib/forecast";
 import type { ReadableSource } from "@/lib/forecast";
 import { MIN_REPORTS_FOR_VERDICT, THRESHOLD_COPY, confidenceOf } from "@/lib/present";
+import { fromEngineRainPercentiles } from "@/lib/rain-percentile";
+import type { RainReading } from "@/lib/rain-percentile";
 import { formatDistance, formatLatLon } from "@/lib/coords";
 import { SiteShell } from "@/components/SiteShell";
 import {
@@ -76,6 +78,9 @@ export default async function SourcePage({ params }: Props) {
     : rows;
 
   let forecast: ReadableSource | null = null;
+  let rain: RainReading | null = null;
+  /** The engine's usable-report count when it calls its own read constant. */
+  let constantFrom: number | null = null;
   let engineError: string | null = null;
   if (rows.length >= MIN_REPORTS_FOR_VERDICT) {
     const guard = await guardEngineRun(await headers());
@@ -94,6 +99,46 @@ export default async function SourcePage({ params }: Props) {
         forecast = found && hasRead(found) ? found : null;
       } catch (e) {
         engineError = e instanceof EngineError ? e.message : String(e);
+      }
+    }
+  } else {
+    /*
+     * Below the floor there is no verdict coming — but rainfall needs no
+     * reports, and "nobody has reported this, come back later" is not the most
+     * this page can say. The engine returns `rain_percentiles` for every source
+     * it is handed, including a bare pin, so ask it for this one.
+     *
+     * THIS SOURCE ALONE, deliberately. The run above sends every neighbour
+     * within 25 km so pooling has something to borrow; around Club Spring that
+     * is 66 sources and, because the precip cache keys on ~1.1 km cells while
+     * ERA5's grid is ~9-11 km, they barely share rows — 62 distinct
+     * coordinates, most of them cold. Paying 62 upstream fetches to render one
+     * percentile would time the function out. Pooling only moves correlations,
+     * and there is no correlation here to move, so one coordinate is not a
+     * degraded version of that run: it is all of it that applies.
+     *
+     * Failure is silent. This is context the page is better for and complete
+     * without, so it must never turn a working page into an error.
+     */
+    const guard = await guardEngineRun(await headers());
+    if (guard.allowed) {
+      try {
+        const result = await runForecast(rows, {
+          pins:
+            rows.length === 0
+              ? [{ source: source.name, lat: source.lat, lon: source.lon }]
+              : [],
+          pool: false,
+        });
+        const found = result.sources.find((s) => s.name === source.name);
+        if (found) {
+          rain = fromEngineRainPercentiles(found.rain_percentiles, found.asof);
+          // Read from the flag, never inferred from n: the copy must not outlive
+          // the behaviour it describes if the engine's analog width ever moves.
+          if (found.pred_is_constant) constantFrom = found.n;
+        }
+      } catch {
+        // See above: no engineError, no error box. The record still renders.
       }
     }
   }
@@ -166,6 +211,8 @@ export default async function SourcePage({ params }: Props) {
             rows={rows}
             neighbours={neighbourList}
             engineError={engineError}
+            rain={rain}
+            constantFrom={constantFrom}
           >
             {reportForm}
           </ThinSourceSheet>

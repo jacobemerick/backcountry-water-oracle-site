@@ -37,18 +37,30 @@ export const WINDOW_DAYS = 60;
  */
 export const MIN_COMPARISON_YEARS = 10;
 
-export type RainPercentile = {
+/**
+ * The part of a rain reading the copy helpers actually need.
+ *
+ * Split out so one set of words can describe a reading from either producer:
+ * this module computes one from a raw series, and the engine emits its own in
+ * `rain_percentiles`. Both use a mid-rank against the same calendar window in
+ * prior years, so the sentence is the same sentence — and a source page and a
+ * gazetteer feature page for the same water say the same thing.
+ */
+export type RainReading = {
   /** Inches over the window ending on `asOf`. */
   total: number;
-  /** Mid-rank position among prior years over the same calendar window: years
-      drier, plus half the years tied, as a percentage. */
+  /** Mid-rank position among prior years over the same calendar window. */
   percentile: number;
   /** Years compared, excluding the one being ranked. */
   years: number;
   /** Last day the window covers — the archive's end, not necessarily today. */
   asOf: string;
   windowDays: number;
-  /** Driest and wettest the same window has been, for scale. */
+};
+
+export type RainPercentile = RainReading & {
+  /** Driest and wettest the same window has been, for scale. Site-side only:
+      the engine reports `median_in` instead, so this is absent on that path. */
   driest: number;
   wettest: number;
 };
@@ -163,7 +175,7 @@ export function seasonOf(iso: string): string {
  */
 export type RainBand = "much drier" | "drier" | "typical" | "wetter" | "much wetter";
 
-export function bandOf(p: RainPercentile): RainBand {
+export function bandOf(p: RainReading): RainBand {
   if (p.percentile <= 15) return "much drier";
   if (p.percentile <= 35) return "drier";
   if (p.percentile < 65) return "typical";
@@ -181,7 +193,7 @@ const BAND_COPY: Record<RainBand, string> = {
 
 export const RAIN_COPY = {
   /** The headline. Weather, stated as weather. */
-  summary(p: RainPercentile): string {
+  summary(p: RainReading): string {
     return (
       `The last ${p.windowDays} days here have been ${BAND_COPY[bandOf(p)]} for ` +
       `${seasonOf(p.asOf)} — ${ordinal(p.percentile)} percentile against ${p.years} years ` +
@@ -197,6 +209,32 @@ export const RAIN_COPY = {
   caveat:
     "This is rainfall, not water. It says what the weather has done here, not what is in the ground — a spring fed from deep water can run through a dry autumn, and a runoff channel can be empty two weeks after a wet one. Which of those this is takes reports to find out.",
 } as const;
+
+/**
+ * The engine's `rain_percentiles`, in the shape the copy helpers read.
+ *
+ * The engine computes this for every source it is given, reports or not, from
+ * the same mid-rank against prior years — so preferring it where a payload
+ * already exists means one producer per page rather than two answers for one
+ * coordinate. Returns null where a sentence would be dishonest: no percentile
+ * at all, or too few comparison years to rank against.
+ */
+export function fromEngineRainPercentiles(
+  rain: Record<string, { inches: number; pct: number | null; n_years: number }>,
+  asOf: string,
+  windowDays: number = WINDOW_DAYS,
+): RainReading | null {
+  const entry = rain[`${windowDays}d`];
+  if (!entry || entry.pct === null) return null;
+  if (entry.n_years < MIN_COMPARISON_YEARS) return null;
+  return {
+    total: entry.inches,
+    percentile: Math.round(entry.pct),
+    years: entry.n_years,
+    asOf,
+    windowDays,
+  };
+}
 
 function ordinal(n: number): string {
   const tens = n % 100;

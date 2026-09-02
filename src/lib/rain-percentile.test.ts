@@ -6,6 +6,7 @@ import {
   WINDOW_DAYS,
   bandOf,
   RAIN_COPY,
+  fromEngineRainPercentiles,
   rankAntecedentRain,
   seasonOf,
 } from "./rain-percentile.ts";
@@ -105,4 +106,64 @@ test("seasons are named the way people say them", () => {
   assert.equal(seasonOf("2026-08-25"), "late August");
   assert.equal(seasonOf("2026-01-05"), "early January");
   assert.equal(seasonOf("2026-12-15"), "mid December");
+});
+
+/*
+ * fromEngineRainPercentiles — the engine as the producer.
+ *
+ * Where a source page already has a payload, the engine's own percentile is
+ * preferred over recomputing one here, so a coordinate has one answer rather
+ * than two. Both sides mid-rank against the same calendar window in prior
+ * years; these tests pin the adapter, not the arithmetic.
+ */
+const enginePayload = (over: Record<string, unknown> = {}) => ({
+  "60d": { inches: 1.234, pct: 42.4, n_years: 19, median_in: 1.277, ...over },
+});
+
+test("adapts the engine's entry for the copy helpers", () => {
+  const r = fromEngineRainPercentiles(enginePayload(), "2026-08-30");
+  assert.ok(r);
+  assert.equal(r.total, 1.234);
+  assert.equal(r.percentile, 42); // whole numbers: 19 years cannot support a decimal
+  assert.equal(r.years, 19);
+  assert.equal(r.asOf, "2026-08-30");
+  assert.equal(r.windowDays, WINDOW_DAYS);
+});
+
+test("the same reading yields the same sentence from either producer", () => {
+  /*
+   * The point of the adapter. A source page and a gazetteer feature page for one
+   * spring used to describe it in different words; now the words come from one
+   * place and only the arithmetic's origin differs.
+   */
+  const fromEngine = fromEngineRainPercentiles(enginePayload(), "2026-08-30");
+  assert.ok(fromEngine);
+  const siteSide = { ...fromEngine, driest: 0.1, wettest: 9.9 };
+  assert.equal(RAIN_COPY.summary(fromEngine), RAIN_COPY.summary(siteSide));
+  assert.equal(bandOf(fromEngine), bandOf(siteSide));
+});
+
+test("says nothing rather than something dishonest", () => {
+  // No percentile at all — the engine emits null where no year qualifies.
+  assert.equal(fromEngineRainPercentiles(enginePayload({ pct: null }), "2026-08-30"), null);
+  // Too few years to rank against, the same floor the site-side path applies.
+  assert.equal(
+    fromEngineRainPercentiles(
+      enginePayload({ n_years: MIN_COMPARISON_YEARS - 1 }),
+      "2026-08-30",
+    ),
+    null,
+  );
+  // A window the payload does not carry.
+  assert.equal(fromEngineRainPercentiles({}, "2026-08-30"), null);
+});
+
+test("a different window can be asked for", () => {
+  const r = fromEngineRainPercentiles(
+    { "180d": { inches: 4.0, pct: 20, n_years: 18 } },
+    "2026-08-30",
+    180,
+  );
+  assert.equal(r?.windowDays, 180);
+  assert.equal(r?.percentile, 20);
 });

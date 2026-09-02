@@ -1,4 +1,4 @@
-import { toEngineCsv, type EngineRow } from "./engine-csv.ts";
+import { toEngineCsv, type EngineRow, type EnginePin } from "./engine-csv.ts";
 import { collectSeries, type DailySeries } from "./precip.ts";
 
 /**
@@ -232,6 +232,11 @@ export type ForecastOptions = {
   poolRadiusKm?: number;
   pool?: boolean;
   timeoutMs?: number;
+  /**
+   * Coordinate-only sources to include alongside `rows` — a place with no
+   * observation. The engine returns them with `n: 0` and real rain context.
+   */
+  pins?: EnginePin[];
 };
 
 export class EngineError extends Error {
@@ -274,7 +279,8 @@ export async function runForecast(
   rows: EngineRow[],
   opts: ForecastOptions = {},
 ): Promise<ForecastResult> {
-  if (rows.length === 0) {
+  const pins = opts.pins ?? [];
+  if (rows.length === 0 && pins.length === 0) {
     throw new EngineError("No reports to forecast from.");
   }
   if (opts.asof !== undefined && !ISO_DATE.test(opts.asof)) {
@@ -287,7 +293,7 @@ export async function runForecast(
   // fetch, and they run serially inside the engine. Once the Postgres precip
   // cache lands (site #8) this drops to milliseconds for warm coordinates.
   const timeoutMs = opts.timeoutMs ?? 60_000;
-  const csv = toEngineCsv(rows);
+  const csv = toEngineCsv(rows, pins);
 
   const engineUrl = process.env.ENGINE_URL;
   if (!engineUrl) return runAsSubprocess(csv, opts, timeoutMs);

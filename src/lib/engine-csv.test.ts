@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toEngineCsv, type EngineRow } from "./engine-csv.ts";
+import { toEngineCsv, type EngineRow, type EnginePin } from "./engine-csv.ts";
 
 const row = (over: Partial<EngineRow> = {}): EngineRow => ({
   source: "Chilson Spring",
@@ -77,4 +77,45 @@ test("disambiguates a name shared by two different coordinates", () => {
 test("pads scores and coordinates to a stable precision", () => {
   const [, line] = toEngineCsv([row({ score: 0.2, lat: 34, lon: -111 })]).trim().split("\n");
   assert.equal(line, "Chilson Spring,34.00000,-111.00000,2025-10-24,0.20,");
+});
+
+/*
+ * Pins — a coordinate with no observation. The engine has read these since
+ * 0.2.0 and answers with rain context, which is the whole point: a spring
+ * nobody has written down still has a rainfall record.
+ */
+const pin = (over: Partial<EnginePin> = {}): EnginePin => ({
+  source: "Unreported Seep",
+  lat: 34.0448,
+  lon: -111.53866,
+  ...over,
+});
+
+test("a pin is a row with date and score blank", () => {
+  const [, line] = toEngineCsv([], [pin()]).trim().split("\n");
+  assert.equal(line, "Unreported Seep,34.04480,-111.53866,,,");
+});
+
+test("pins and observations travel in one CSV", () => {
+  const lines = toEngineCsv([row()], [pin()]).trim().split("\n");
+  assert.equal(lines.length, 3);
+  assert.match(lines[1], /^Chilson Spring,/);
+  assert.match(lines[2], /^Unreported Seep,/);
+});
+
+test("a pin never overrides a source that has observations", () => {
+  /*
+   * The engine groups by name and adopts the FIRST row's coordinates, so a pin
+   * emitted for a name that already has reports could move that source onto the
+   * pin's coordinate and correlate its whole history against the wrong weather.
+   * Emitting pins last and skipping claimed names is what prevents it.
+   */
+  const csv = toEngineCsv([row()], [pin({ source: "Chilson Spring", lat: 0, lon: 0 })]);
+  const lines = csv.trim().split("\n");
+  assert.equal(lines.length, 2, "the pin should have been dropped");
+  assert.ok(!csv.includes("0.00000"), "the pin's coordinates must not appear");
+});
+
+test("no pins is the same CSV as before", () => {
+  assert.equal(toEngineCsv([row()]), toEngineCsv([row()], []));
 });
