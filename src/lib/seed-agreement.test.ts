@@ -7,22 +7,23 @@ import { parseCsv } from "./report-import.ts";
 import { isRubricScore } from "./rubric.ts";
 
 /**
- * The two seed files describe overlapping reality, and must agree about it.
+ * The two seed files record overlapping visits on two different scales.
  *
- * `jacob-field-notes-*.csv` is what goes to production; `mazatzal-wilderness.csv`
- * is the engine's corpus, where the same observation often already appears --
- * scraped from a source page whose free text carried the vocabulary label
- * ("Medium flow", "Quart per minute") that the hand-authored field notes do not.
+ * `jacob-field-notes-*.csv` comes from the triplog app, which scores **0-4
+ * droplets**, mapped onto the rubric per the note on #73 (0.0 / 0.2 / 0.4 / 0.8 /
+ * 1.0 — 0.6 is unused). `mazatzal-wilderness.csv` is the engine corpus, scraped
+ * from hikeArizona source pages, which carry the **nine-label flow vocabulary**.
  *
- * That asymmetry is exactly how #37 happened: four rows were hand-scored on a
- * different scale than the corpus used for the same days, and nothing could see
- * it, because the field-note rows carry no label to check the number against.
- * The corpus is the label. This compares them.
+ * The same visit is often in both, and they disagree — five droplet levels cannot
+ * separate nine labels, so 3 droplets has been recorded as "Medium flow" (0.6)
+ * three times and "Gallon per minute" (0.8) once. **That is lossiness in the
+ * coarser instrument, not a bad row.** Engine#37 read it as a scoring error and
+ * an earlier version of this file asserted the two must match; both were wrong,
+ * and the assertion would have rejected any future batch scored per #73.
  *
- * Honest disagreement is allowed. Two people can report one spring on one day
- * and see different things, so the corpus legitimately holds several scores for
- * a single (source, date) -- the assertion is that the field-note score is one
- * of them, not that the corpus holds only one.
+ * So this reports the overlap instead of policing it. A disagreement is a fact
+ * about two records of one visit, and the useful thing is that it is visible when
+ * someone is deciding how to score the next batch — not that CI stops.
  */
 const SEED_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "db", "seed");
 
@@ -43,6 +44,11 @@ function readSeed(file: string): Row[] {
 const FIELD_NOTES = "jacob-field-notes-2026-08.csv";
 const CORPUS = "mazatzal-wilderness.csv";
 
+/**
+ * This one DOES fail. Every score in either file has to land on a rubric anchor
+ * whatever scale produced it — that catches a typo or a stray column without
+ * taking a position on which record of a visit is right.
+ */
 test("every seeded score is on the rubric", () => {
   for (const file of [FIELD_NOTES, CORPUS]) {
     for (const r of readSeed(file)) {
@@ -51,25 +57,27 @@ test("every seeded score is on the rubric", () => {
   }
 });
 
-test("field notes and the corpus agree where they describe the same observation", () => {
+test("report where the two scales disagree about one visit", (t) => {
   const corpus = new Map<string, number[]>();
   for (const r of readSeed(CORPUS)) {
     const key = `${r.source}|${r.date}`;
     corpus.set(key, [...(corpus.get(key) ?? []), r.score]);
   }
 
-  const disagreements: string[] = [];
   let overlapping = 0;
+  const differing: string[] = [];
   for (const r of readSeed(FIELD_NOTES)) {
     const seen = corpus.get(`${r.source}|${r.date}`);
     if (!seen) continue;
     overlapping++;
     if (!seen.some((s) => Math.abs(s - r.score) < 1e-9)) {
-      disagreements.push(`${r.source} ${r.date}: field notes ${r.score}, corpus ${seen.join("/")}`);
+      differing.push(`${r.source} ${r.date}: triplog ${r.score}, corpus ${seen.join("/")}`);
     }
   }
 
-  // A guard that stopped overlapping would pass silently forever.
+  // The only assertion: that the comparison still has something to compare. If the
+  // files stop overlapping this goes quiet, and quiet would read as agreement.
   assert.ok(overlapping > 0, "the two seed files no longer share an observation");
-  assert.deepEqual(disagreements, []);
+  t.diagnostic(`${overlapping} visits in both files, ${differing.length} scored differently`);
+  for (const d of differing) t.diagnostic(d);
 });
